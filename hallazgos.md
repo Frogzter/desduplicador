@@ -1,100 +1,139 @@
 # Hallazgos de Revisión de Código - DesDuplicador
 
-**Fecha:** 2026-06-09 (Tercera revisión post-arreglos)
+**Fecha:** 2026-06-09 (Cuarta revisión)
 **Alcance:** app.py, static/js/app.js, templates/index.html, static/css/style.css, tests/test_app.py
 
 ---
 
 ## Resumen Ejecutivo
 
-La tercera revisión confirma que **todos los issues de la segunda ronda fueron resueltos correctamente**. En la cuarta iteración se resolvieron los 3 items restantes (tests de acción, tests de browse_folder, y `os.scandir()`). **0 issues pendientes**.
+Cuarta revisión post-implementación. **32 tests pasando, 0 issues críticos o altos**. Se detectaron **1 issue medio** y **4 issues bajos** nuevos. Todos los issues de revisiones anteriores permanecen resueltos.
 
 | Estado | Crítico | Alto | Medio | Bajo |
 |--------|---------|------|-------|------|
 | Resueltos ✅ | 3/3 | 5/5 | 10/10 | 7/7 |
-| Pendientes ⏳ | 0 | 0 | 0 | 0 |
-| Nuevos 🆕 | 0 | 0 | 0 | 0 |
+| Pendientes ⏳ | 0 | 0 | 1 | 4 |
+| Nuevos 🆕 | 0 | 0 | 1 | 4 |
 
 ---
 
-## Issues Resueltos ✅
+## Issues Resueltos ✅ (de revisiones anteriores)
 
-### Críticos (todos resueltos)
+Ver revisiones previas para detalle completo.
 
-| ID | Issue | Arreglo aplicado | Verificado |
-|----|-------|-------------------|------------|
-| CRIT-1 | Bomba de I/O: `load_config()` por cada archivo | `tamano_min_video` pasa como parámetro a `archivo_pasa_filtro()` | ✅ Tests pasan |
-| CRIT-2 | Código muerto `_browse_ifiledialog` requería `comtypes` | Función eliminada por completo | ✅ No aparece en el código |
-| CRIT-3 | XSS vía `innerHTML` con rutas de usuario | `renderGroup()` reescrito con `document.createElement()` + `textContent` | ✅ Revisado línea por línea |
-
-### Altos (todos resueltos)
-
-| ID | Issue | Arreglo aplicado | Verificado |
-|----|-------|-------------------|------------|
-| HIGH-1 | Race condition en config/progress | `threading.Lock()` (`config_lock`) envuelve todas las operaciones de archivo | ✅ Revisado en `load_config`, `save_config`, `save_progress`, `load_progress` |
-| HIGH-2 | Sin validación de rutas en `/api/action` | `_is_path_allowed()` verifica que cada archivo esté dentro de las rutas configuradas usando `Path.relative_to()` | ✅ Test `test_action_path_validation` pasa |
-| HIGH-3 | `fileIdentityMap` con índices inestables | Eliminado completamente. Ahora `radio.value = file.path` y `data-file-id = file.path` | ✅ No hay mapa de índices |
-| HIGH-4 | Copia parcial silenciosa en consolidate | Se verifica `dest.exists()` y `dest.stat().st_size == src.stat().st_size` antes de `src.unlink()` | ✅ Revisado en línea 411-414 |
-| HIGH-5 | Progress no refleja filtrado | Paso intermedio "Filtrando archivos..." agregado con `filtrados_count` | ✅ Líneas 246-262 |
-
-### Medios (todos resueltos)
-
-| ID | Issue | Arreglo aplicado | Verificado |
-|----|-------|-------------------|------------|
-| MED-1 | Código muerto `_browse_ifiledialog` | Eliminado | ✅ |
-| MED-2 | Import `emit` no usado | Removido de `from flask_socketio import SocketIO, emit` → `import SocketIO` | ✅ |
-| MED-3 | Mezcla de español/inglés en identificadores | **Aceptado como deuda técnica.** El codebase mantiene convención mixta: utilidades en español (`detectar_categoria`), UI/frontend en inglés (`currentDuplicates`). Documentado como LOW prioridad. | ✅ No bloquea release |
-| MED-5 | `onclick` inline mezclado con event delegation | Todos los `onclick` removidos del HTML. Event delegation maneja todo vía `data-action`, clases CSS y `closest()` | ✅ `grep onclick templates/index.html` retorna vacío |
-| MED-6 | Imports dentro de funciones | `subprocess`, `tempfile`, `logging`, `ctypes.wintypes` movidos a top-level | ✅ Revisado en imports |
-| MED-7 | Sin tests | 24 tests pytest agregados con cobertura de categorías, filtros, format_size, escape_html, endpoints Flask, config roundtrip | ✅ `24 passed in 0.26s` |
-| MED-8 | `escapeHtml` incompleto | Ahora escapa `& " ' < >` | ✅ Revisado línea 622-630 |
-| **NUEVO-MED-1** | Logger sin handler/level | `if not logger.handlers:` agrega `StreamHandler` + `Formatter` + `setLevel(logging.INFO)` | ✅ Líneas 40-45 |
-| **MED-4** | Sin type hints | `from typing import Optional, Dict, List, Any` + anotaciones en `format_size`, `escape_html`, `detectar_categoria`, `archivo_pasa_filtro`, `load_config`, `save_config`, `save_progress`, `load_progress`, `md5_file`, `scan_worker`, `_browse_folder_ctypes`, `_browse_folder_powershell`, `browse_folder`, `handle_action` | ✅ 24 tests pasan |
-
-### Bajos (todos resueltos)
-
-| ID | Issue | Arreglo aplicado | Verificado |
-|----|-------|-------------------|------------|
-| LOW-1 | Número mágico `17` | Constante `CSIDL_DRIVES = 0x0011` | ✅ Línea 40 |
-| LOW-2 | `print()` en vez de logging | `logger.error()` / `logger.warning()` | ✅ Líneas 148, 453, 529, 564 |
-| LOW-3 | `data/*.json` trackeado e ignorado | `git rm --cached` aplicado | ✅ `D data/config.json` en git status |
-| LOW-4 | TODO.md sin actualizar | Actualizado con checklist completo | ✅ |
-| LOW-5 | CSS sin custom properties | `:root` con 14 variables CSS; ~62 reemplazos de hex codes hardcodeados por `var(--*)` | ✅ `grep '#[0-9a-f]' style.css` solo retorna `:root` decls y `#fff` |
-| LOW-6 | Sin `.editorconfig` | Agregado con reglas para Python, JS, HTML, CSS | ✅ |
-| **NUEVO-LOW-1** | `addPath()` usa `innerHTML` | Reescrito con `document.createElement()` puro (numSpan, input, browseBtn, removeBtn) | ✅ Líneas 244-284 |
+| Categoría | Count |
+|-----------|-------|
+| Críticos | 3 (I/O bomba, código muerto COM, XSS innerHTML) |
+| Altos | 5 (race config, path validation, mapa inestable, copia verificada, progress filtrado) |
+| Medios | 10 (imports, tests, escapeHtml, type hints, logger config, event delegation, etc.) |
+| Bajos | 7 (constantes, logging, gitignore, editorconfig, CSS variables, addPath createElement) |
 
 ---
 
-## Issues Persistentes ⏳
+## Nuevos Hallazgos 🆕
 
-### MED-3: Mezcla de español/inglés en identificadores
+### NUEVO-MED-1: SECRET_KEY hardcodeado (app.py:31)
 
-**Estado:** Aceptado como deuda técnica. No se planea refactorizar en esta iteración.
+**Problema:**
+```python
+app.config['SECRET_KEY'] = 'desduplicador-secret-key'
+```
 
-Ejemplos:
-- Español: `detectar_categoria`, `archivo_pasa_filtro`, `tamano_min_video`
-- Inglés: `currentDuplicates`, `REQUEST_TIMEOUT_MS`, `normalizeError`, `pickFolder`
+El secret key de Flask está hardcodeado en el código fuente. Si la app se expone a la red (aunque sea accidentalmente), el secret es público y predecible.
 
-**Impacto:** Mantenibilidad a largo plazo.
+**Impacto:** Medio. Flask usa SECRET_KEY para firmar cookies de sesión. Con un secret conocido, un atacante podría falsificar cookies.
 
-**Fix recomendado:** Refactorizar a un idioma consistente (español recomendado dado que la UI y el dominio son en español).
+**Fix recomendado:**
+```python
+import os
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'desduplicador-secret-key-dev')
+```
+
+---
+
+### NUEVO-LOW-1: Inline styles en index.html
+
+**Líneas:** 60, 78, 82
+
+```html
+<p style="font-size:11px; color:#808080; margin:8px 0 0 0;">
+<div class="progreso-barra-fill" id="progress-fill" style="width: 0%">
+<section id="results-section" style="display:none;">
+```
+
+**Impacto:** Bajo. Rompe separación de concerns. `style="width: 0%"` y `style="display:none;"` son necesarios para estado inicial pero podrían manejarse con clases CSS (`hidden`, `width-zero`) o desde JS al cargar.
+
+**Fix recomendado:**
+- Agregar clase `.help-text` para el párrafo de filtros
+- Usar clase `.hidden` para `display: none`
+- El `width: 0%` del progress bar puede inicializarse desde JS en `DOMContentLoaded`
+
+---
+
+### NUEVO-LOW-2: Código muerto en event delegation (app.js:825-832)
+
+**Problema:** En el case `browse-folder` del event delegation:
+
+```javascript
+case 'browse-folder': {
+    const row = actionBtn.closest('.ruta-item');
+    if (!row) return;
+    if (row.querySelector('#output-path')) {
+        browseOutputPath();
+        return;
+    }
+    if (row.querySelector('#review-path')) {
+        browseReviewPath();
+        return;
+    }
+    browseFolder(actionBtn);
+    return;
+}
+```
+
+Las líneas 825-832 nunca se ejecutan porque los botones de output-path y review-path en el HTML tienen `data-action="browse-output"` y `data-action="browse-review"` (no `"browse-folder"`). Esos flujos se manejan en cases separados (líneas 836-841).
+
+**Impacto:** Bajo. Código inalcanzable, confunde la lógica.
+
+**Fix recomendado:** Eliminar las dos verificaciones `querySelector('#output-path')` y `querySelector('#review-path')` del case `browse-folder`.
+
+---
+
+### NUEVO-LOW-3: `_collect_files` como función anidada (app.py:234)
+
+**Problema:** `_collect_files` se define dentro de `scan_worker`, por lo que se recompila en cada llamada al worker.
+
+**Impacto:** Bajo. En Python las funciones anidadas tienen overhead mínimo, pero es anti-patrón para una función pura sin dependencias del closure.
+
+**Fix recomendado:** Mover `_collect_files` al nivel de módulo (igual que `md5_file`, `format_size`, etc.).
+
+---
+
+### NUEVO-LOW-4: Lógica duplicada `formatSize` / `format_size`
+
+**Problema:** `formatSize` en JS (línea 478) y `format_size` en Python (línea 62) implementan exactamente el mismo algoritmo de formato de bytes.
+
+**Impacto:** Bajo. Cambios en formato requieren editar dos lugares.
+
+**Fix recomendado:** No hay fix trivial sin que el backend formatee todo (ineficiente) o el frontend tenga que llamar al backend por cada número. Aceptable como duplicación conocida.
 
 ---
 
 ## Arquitectura: Estado Actual
 
 ### Seguridad de hilos ✅
-- `config_lock` protege todas las operaciones de archivo de configuración.
-- `scan_thread` sigue siendo global, pero el chequeo `is_alive()` + el lock de config reduce el riesgo de race conditions.
+- `config_lock` protege todas las operaciones de archivo.
+- `scan_thread` chequeo `is_alive()` + lock de config.
 
 ### Rendimiento ✅
-- Ya no hay lecturas de disco repetidas durante el escaneo.
-- `os.walk()` reemplazado por `_collect_files()` con `os.scandir()` recursivo. Mejor rendimiento y control sobre symlinks (`follow_symlinks=False`).
+- `os.scandir()` reemplazó `os.walk()` en `_collect_files`.
+- Sin lecturas de disco repetidas.
 
-### Seguridad ✅
+### Seguridad ⚠️
 - Rutas validadas en `/api/action`.
-- XSS mitigado en el renderizado de duplicados (`renderGroup`, `addPath`, `escapeHtml`).
-- Sin CSRF protection explícita (Flask no lo tiene habilitado por defecto). Aceptable para uso local.
+- XSS mitigado (createElement + textContent).
+- **NUEVO-MED-1:** SECRET_KEY hardcodeado.
+- Sin CSRF protection (aceptable para uso local).
 
 ---
 
@@ -104,27 +143,23 @@ Ejemplos:
 
 | Suite | Tests | Cobertura |
 |-------|-------|-----------|
-| `TestDetectarCategoria` | 8 | Todas las categorías + case insensitive + otros |
+| `TestDetectarCategoria` | 8 | Categorías + case insensitive + otros |
 | `TestArchivoPasaFiltro` | 5 | Sin filtros, activo/inactivo, video por tamaño |
 | `TestFormatSize` | 4 | 0 B, KB, MB, GB |
 | `TestEscapeHtml` | 1 | `< > & "` |
 | `TestFlaskEndpoints` | 5 | GET/POST config, filters, last_scan, roundtrip |
-| `TestConfigSaveLoad` | 1 | Save + load con `monkeypatch` de DATA_DIR |
+| `TestConfigSaveLoad` | 1 | Save + load con monkeypatch |
 | `TestActionEndpoint` | 5 | delete, rename, move_review, consolidate, path not allowed |
 | `TestBrowseFolder` | 3 | PowerShell, ctypes, cancelado |
-
-**Calidad de tests:**
-- ✅ Usan `monkeypatch` para aislar `DATA_DIR` (no contaminan config real)
-- ✅ `autouse=True` en el fixture de patch
-- ✅ Cobertura de casos edge (0 bytes, case insensitive, video pequeño)
-- ✅ Endpoints de acción testeados con archivos reales temporales
-- ✅ Browse folder testeado con monkeypatch de fallbacks Windows
 
 ---
 
 ## Recomendaciones
 
-### Completado ✅
-- ~~Agregar test de `/api/action` con ruta permitida~~ → 5 tests agregados (delete, path not allowed, rename, move_review, consolidate)
-- ~~Agregar test de `/api/browse_folder`~~ → 3 tests agregados (powershell, ctypes, cancelled)
-- ~~Considerar `os.scandir()` para mejorar rendimiento del escaneo~~ → `os.walk()` reemplazado por `_collect_files()` con `os.scandir()` recursivo
+### Prioridad Inmediata
+1. **NUEVO-MED-1**: Mover `SECRET_KEY` a variable de entorno.
+
+### Prioridad Baja
+2. **NUEVO-LOW-1**: Mover inline styles del HTML a clases CSS.
+3. **NUEVO-LOW-2**: Eliminar código muerto en event delegation (`browse-folder` case).
+4. **NUEVO-LOW-3**: Mover `_collect_files` a nivel de módulo.
