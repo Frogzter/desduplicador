@@ -1,7 +1,87 @@
 const socket = io();
 
 let currentDuplicates = [];
-let groupSelections = {};
+let fileIdentityMap = {};
+const REQUEST_TIMEOUT_MS = 15000;
+
+const dom = {
+    pathsContainer: () => document.getElementById('paths-container'),
+    outputPath: () => document.getElementById('output-path'),
+    reviewPath: () => document.getElementById('review-path'),
+    minVideoSize: () => document.getElementById('tamano-min-video'),
+    btnScan: () => document.getElementById('btn-scan'),
+    btnStop: () => document.getElementById('btn-stop'),
+    progressSection: () => document.getElementById('progress-section'),
+    progressFill: () => document.getElementById('progress-fill'),
+    progressMessage: () => document.getElementById('progress-message'),
+    progressPercent: () => document.getElementById('progress-percent'),
+    resultsSection: () => document.getElementById('results-section'),
+    duplicatesContainer: () => document.getElementById('duplicates-container'),
+    stats: () => document.getElementById('stats'),
+    filtrosGrid: () => document.getElementById('filtros-grid')
+};
+
+function normalizeError(err) {
+    if (err instanceof Error) return err.message;
+    return String(err);
+}
+
+async function apiRequest(url, options = {}) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    try {
+        const response = await fetch(url, {
+            ...options,
+            signal: controller.signal
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status} en ${url}`);
+        }
+
+        return response.json();
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            throw new Error(`Tiempo de espera agotado en ${url}`);
+        }
+        throw err;
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+async function apiGet(url) {
+    return apiRequest(url);
+}
+
+async function apiPost(url, payload) {
+    return apiRequest(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+}
+
+function getCurrentConfigValues() {
+    const outputInput = dom.outputPath();
+    const reviewInput = dom.reviewPath();
+    const minVideoInput = dom.minVideoSize();
+
+    const tamanoMinMb = Number.parseInt(minVideoInput?.value || '1', 10);
+    return {
+        outputPath: outputInput ? outputInput.value.trim() : '',
+        reviewPath: reviewInput ? reviewInput.value.trim() : '',
+        tamanoMinVideo: tamanoMinMb * 1024 * 1024
+    };
+}
+
+async function pickFolder({ title, initialDir = '' }) {
+    return apiPost('/api/browse_folder', {
+        title,
+        initial_dir: initialDir
+    });
+}
 
 // Cargar configuración al iniciar
 document.addEventListener('DOMContentLoaded', () => {
@@ -30,64 +110,97 @@ socket.on('scan_stopped', () => {
 });
 
 function loadConfig() {
-    fetch('/api/config')
-        .then(r => r.json())
+    apiGet('/api/config')
         .then(config => {
-            if (config.paths && config.paths.length > 0) {
-                const container = document.getElementById('paths-container');
+            const container = dom.pathsContainer();
+            if (config.paths && config.paths.length > 0 && container) {
                 container.innerHTML = '';
                 config.paths.forEach((path, index) => {
                     addPath(path, index + 1);
                 });
             }
-            if (config.output_path) {
-                document.getElementById('output-path').value = config.output_path;
+
+            const output = dom.outputPath();
+            if (config.output_path && output) {
+                output.value = config.output_path;
             }
-            if (config.review_path) {
-                document.getElementById('review-path').value = config.review_path;
+
+            const review = dom.reviewPath();
+            if (config.review_path && review) {
+                review.value = config.review_path;
             }
-            if (config.tamano_min_video !== undefined) {
-                document.getElementById('tamano-min-video').value = Math.round(config.tamano_min_video / (1024 * 1024));
+
+            const minVideo = dom.minVideoSize();
+            if (config.tamano_min_video !== undefined && minVideo) {
+                minVideo.value = Math.round(config.tamano_min_video / (1024 * 1024));
             }
         })
-        .catch(err => console.error('Error cargando config:', err));
+        .catch(err => {
+            console.error('Error cargando config:', normalizeError(err));
+            showToast('No se pudo cargar la configuración', 'error');
+        });
 }
 
 function loadFilters() {
-    fetch('/api/filters')
-        .then(r => r.json())
+    apiGet('/api/filters')
         .then(data => {
-            renderFilters(data.categorias, data.filtros_activos);
+            renderFilters(data.categorias, data.filtros_activos || []);
         })
-        .catch(err => console.error('Error cargando filtros:', err));
+        .catch(err => {
+            console.error('Error cargando filtros:', normalizeError(err));
+            showToast('No se pudieron cargar los filtros', 'error');
+        });
+}
+
+function createFilterItem({ value, label, countText, isActive }) {
+    const item = document.createElement('div');
+    item.className = `filtro-item ${isActive ? 'activo' : ''}`;
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = value;
+    checkbox.checked = !!isActive;
+    checkbox.addEventListener('click', (event) => event.stopPropagation());
+
+    const labelEl = document.createElement('label');
+    labelEl.textContent = label;
+
+    const countEl = document.createElement('span');
+    countEl.className = 'filtro-count';
+    countEl.textContent = countText;
+
+    item.appendChild(checkbox);
+    item.appendChild(labelEl);
+    item.appendChild(countEl);
+
+    return item;
 }
 
 function renderFilters(categorias, filtrosActivos) {
-    const container = document.getElementById('filtros-grid');
+    const container = dom.filtrosGrid();
     if (!container) return;
-    
-    let html = '';
-    for (const [categoria, exts] of Object.entries(categorias)) {
+
+    container.innerHTML = '';
+
+    for (const [categoria, exts] of Object.entries(categorias || {})) {
         const isActive = filtrosActivos.includes(categoria);
-        html += `
-            <div class="filtro-item ${isActive ? 'activo' : ''}" onclick="toggleFilter(this)">
-                <input type="checkbox" value="${categoria}" ${isActive ? 'checked' : ''} onclick="event.stopPropagation();">
-                <label>${capitalize(categoria)}</label>
-                <span class="filtro-count">${exts.length} ext</span>
-            </div>
-        `;
+        const item = createFilterItem({
+            value: categoria,
+            label: capitalize(categoria),
+            countText: `${exts.length} ext`,
+            isActive
+        });
+        container.appendChild(item);
     }
-    // Categoria "otros"
+
     const otrosActive = filtrosActivos.includes('otros');
-    html += `
-        <div class="filtro-item ${otrosActive ? 'activo' : ''}" onclick="toggleFilter(this)">
-            <input type="checkbox" value="otros" ${otrosActive ? 'checked' : ''} onclick="event.stopPropagation();">
-            <label>Otros</label>
-            <span class="filtro-count">resto</span>
-        </div>
-    `;
-    
-    container.innerHTML = html;
+    const otrosItem = createFilterItem({
+        value: 'otros',
+        label: 'Otros',
+        countText: 'resto',
+        isActive: otrosActive
+    });
+    container.appendChild(otrosItem);
 }
 
 function toggleFilter(item) {
@@ -106,19 +219,23 @@ function capitalize(str) {
 }
 
 function loadLastScan() {
-    fetch('/api/last_scan')
-        .then(r => r.json())
+    apiGet('/api/last_scan')
         .then(data => {
             if (data && data.length > 0) {
                 currentDuplicates = data;
                 renderDuplicates();
             }
         })
-        .catch(err => console.error('Error cargando último escaneo:', err));
+        .catch(err => {
+            console.error('Error cargando último escaneo:', normalizeError(err));
+            showToast('No se pudo cargar el último escaneo', 'error');
+        });
 }
 
 function addPath(value = '', num = null) {
-    const container = document.getElementById('paths-container');
+    const container = dom.pathsContainer();
+    if (!container) return;
+
     const rows = container.querySelectorAll('.ruta-item');
     const nextNum = num || rows.length + 1;
     
@@ -126,106 +243,92 @@ function addPath(value = '', num = null) {
     row.className = 'ruta-item';
     row.innerHTML = `
         <span class="ruta-num">${nextNum}</span>
-        <input type="text" class="path-input" placeholder="C:\\\\Ruta\\\\Carpeta" value="${value}" />
-        <button class="btn-icon btn-browse" onclick="browseFolder(this)" title="Examinar...">📂</button>
-        <button class="btn-icon btn-remove" onclick="removePath(this)">✕</button>
+        <input type="text" class="path-input" placeholder="C:\\\\Ruta\\\\Carpeta" value="${escapeHtml(value)}" />
+        <button class="btn-icon btn-browse" type="button" title="Examinar...">📂</button>
+        <button class="btn-icon btn-remove" type="button">✕</button>
     `;
     container.appendChild(row);
     renumberPaths();
 }
 
 function addPathWithDialog() {
-    fetch('/api/browse_folder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            title: 'Seleccionar carpeta para comparar',
-            initial_dir: ''
+    pickFolder({
+        title: 'Seleccionar carpeta para comparar',
+        initialDir: ''
+    })
+        .then(data => {
+            if (data.success && data.path) {
+                addPath(data.path);
+                showToast('Carpeta agregada: ' + data.path, 'success');
+            }
         })
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success && data.path) {
-            addPath(data.path);
-            showToast('Carpeta agregada: ' + data.path, 'success');
-        }
-    })
-    .catch(err => {
-        showToast('Error abriendo diálogo: ' + err, 'error');
-    });
+        .catch(err => {
+            showToast('Error abriendo diálogo: ' + normalizeError(err), 'error');
+        });
 }
 
 function browseFolder(btn) {
-    const row = btn.closest('.ruta-item');
-    const input = row.querySelector('.path-input');
+    const row = btn?.closest('.ruta-item');
+    const input = row?.querySelector('.path-input');
+    if (!input) return;
+
     const currentPath = input.value.trim();
-    
-    fetch('/api/browse_folder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            title: 'Seleccionar carpeta para comparar',
-            initial_dir: currentPath
+
+    pickFolder({
+        title: 'Seleccionar carpeta para comparar',
+        initialDir: currentPath
+    })
+        .then(data => {
+            if (data.success && data.path) {
+                input.value = data.path;
+                showToast('Carpeta seleccionada: ' + data.path, 'success');
+            }
         })
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success && data.path) {
-            input.value = data.path;
-            showToast('Carpeta seleccionada: ' + data.path, 'success');
-        }
-    })
-    .catch(err => {
-        showToast('Error abriendo diálogo: ' + err, 'error');
-    });
+        .catch(err => {
+            showToast('Error abriendo diálogo: ' + normalizeError(err), 'error');
+        });
 }
 
 function browseOutputPath() {
-    const input = document.getElementById('output-path');
+    const input = dom.outputPath();
+    if (!input) return;
+
     const currentPath = input.value.trim();
-    
-    fetch('/api/browse_folder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            title: 'Seleccionar carpeta de consolidación',
-            initial_dir: currentPath
+
+    pickFolder({
+        title: 'Seleccionar carpeta de consolidación',
+        initialDir: currentPath
+    })
+        .then(data => {
+            if (data.success && data.path) {
+                input.value = data.path;
+                showToast('Carpeta de consolidación: ' + data.path, 'success');
+            }
         })
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success && data.path) {
-            input.value = data.path;
-            showToast('Carpeta de consolidación: ' + data.path, 'success');
-        }
-    })
-    .catch(err => {
-        showToast('Error abriendo diálogo: ' + err, 'error');
-    });
+        .catch(err => {
+            showToast('Error abriendo diálogo: ' + normalizeError(err), 'error');
+        });
 }
 
 function browseReviewPath() {
-    const input = document.getElementById('review-path');
+    const input = dom.reviewPath();
+    if (!input) return;
+
     const currentPath = input.value.trim();
-    
-    fetch('/api/browse_folder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            title: 'Seleccionar carpeta de revisión',
-            initial_dir: currentPath
+
+    pickFolder({
+        title: 'Seleccionar carpeta de revisión',
+        initialDir: currentPath
+    })
+        .then(data => {
+            if (data.success && data.path) {
+                input.value = data.path;
+                showToast('Carpeta de revisión: ' + data.path, 'success');
+            }
         })
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success && data.path) {
-            input.value = data.path;
-            showToast('Carpeta de revisión: ' + data.path, 'success');
-        }
-    })
-    .catch(err => {
-        showToast('Error abriendo diálogo: ' + err, 'error');
-    });
+        .catch(err => {
+            showToast('Error abriendo diálogo: ' + normalizeError(err), 'error');
+        });
 }
 
 function removePath(btn) {
@@ -234,7 +337,11 @@ function removePath(btn) {
         showToast('Debe haber al menos una ruta', 'error');
         return;
     }
-    btn.closest('.ruta-item').remove();
+
+    const row = btn?.closest('.ruta-item');
+    if (!row) return;
+
+    row.remove();
     renumberPaths();
 }
 
@@ -255,48 +362,50 @@ function getPaths() {
 
 function savePaths() {
     const paths = getPaths();
-    const outputPath = document.getElementById('output-path').value.trim();
-    const reviewPath = document.getElementById('review-path').value.trim();
     const filtrosActivos = getActiveFilters();
-    const tamanoMinVideo = parseInt(document.getElementById('tamano-min-video').value || '1') * 1024 * 1024;
+    const { outputPath, reviewPath, tamanoMinVideo } = getCurrentConfigValues();
 
-    fetch('/api/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paths, output_path: outputPath, review_path: reviewPath, filtros_activos: filtrosActivos, tamano_min_video: tamanoMinVideo })
+    apiPost('/api/config', {
+        paths,
+        output_path: outputPath,
+        review_path: reviewPath,
+        filtros_activos: filtrosActivos,
+        tamano_min_video: tamanoMinVideo
     })
-    .then(r => r.json())
-    .then(() => showToast('Configuracion guardada correctamente', 'success'))
-    .catch(err => showToast('Error guardando configuracion: ' + err, 'error'));
+        .then(() => showToast('Configuracion guardada correctamente', 'success'))
+        .catch(err => showToast('Error guardando configuracion: ' + normalizeError(err), 'error'));
 }
 
 function startScan() {
+    if (!dom.btnScan() || !dom.btnStop() || !dom.progressSection() || !dom.resultsSection()) {
+        showToast('Faltan elementos de interfaz para iniciar escaneo', 'error');
+        return;
+    }
     const paths = getPaths();
     if (paths.length < 2) {
         showToast('Se necesitan al menos 2 rutas para comparar', 'error');
         return;
     }
 
-    // Guardar filtros antes de escanear
     const filtrosActivos = getActiveFilters();
-    const tamanoMinVideo = parseInt(document.getElementById('tamano-min-video').value || '1') * 1024 * 1024;
+    const { tamanoMinVideo } = getCurrentConfigValues();
 
-    fetch('/api/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paths, filtros_activos: filtrosActivos, tamano_min_video: tamanoMinVideo })
+    apiPost('/api/config', {
+        paths,
+        filtros_activos: filtrosActivos,
+        tamano_min_video: tamanoMinVideo
     })
-    .then(() => {
-        document.getElementById('btn-scan').disabled = true;
-        document.getElementById('btn-stop').disabled = false;
-        document.getElementById('progress-section').style.display = 'block';
-        document.getElementById('progress-section').classList.add('activo');
-        document.getElementById('results-section').style.display = 'none';
-        
-        updateProgress(0, 100, 'Iniciando escaneo...');
-        socket.emit('start_scan', { paths });
-    })
-    .catch(err => showToast('Error guardando filtros: ' + err, 'error'));
+        .then(() => {
+            dom.btnScan().disabled = true;
+            dom.btnStop().disabled = false;
+            dom.progressSection().style.display = 'block';
+            dom.progressSection().classList.add('activo');
+            dom.resultsSection().style.display = 'none';
+
+            updateProgress(0, 100, 'Iniciando escaneo...');
+            socket.emit('start_scan', { paths });
+        })
+        .catch(err => showToast('Error guardando filtros: ' + normalizeError(err), 'error'));
 }
 
 function stopScan() {
@@ -304,17 +413,24 @@ function stopScan() {
 }
 
 function resetScanUI() {
-    document.getElementById('btn-scan').disabled = false;
-    document.getElementById('btn-stop').disabled = true;
+    const btnScan = dom.btnScan();
+    const btnStop = dom.btnStop();
+    if (btnScan) btnScan.disabled = false;
+    if (btnStop) btnStop.disabled = true;
 }
 
 function updateProgress(current, total, message) {
     const percent = total > 0 ? Math.round((current / total) * 100) : 0;
-    const fillEl = document.getElementById('progress-fill');
-    fillEl.style.width = percent + '%';
-    fillEl.textContent = percent + '%';
-    document.getElementById('progress-message').textContent = message;
-    document.getElementById('progress-percent').textContent = percent + '%';
+    const fillEl = dom.progressFill();
+    const progressMessage = dom.progressMessage();
+    const progressPercent = dom.progressPercent();
+
+    if (fillEl) {
+        fillEl.style.width = percent + '%';
+        fillEl.textContent = percent + '%';
+    }
+    if (progressMessage) progressMessage.textContent = message;
+    if (progressPercent) progressPercent.textContent = percent + '%';
 }
 
 function scanCompleted(data) {
@@ -322,7 +438,6 @@ function scanCompleted(data) {
     updateProgress(100, 100, 'Escaneo completado');
     
     currentDuplicates = data.duplicates || [];
-    groupSelections = {};
     
     renderDuplicates();
     showToast(`Escaneo completado: ${data.total_groups} grupos de duplicados encontrados`, 'success');
@@ -340,30 +455,13 @@ function formatDate(timestamp) {
     return new Date(timestamp * 1000).toLocaleString('es-ES');
 }
 
-function renderDuplicates() {
-    const container = document.getElementById('duplicates-container');
-    const resultsSection = document.getElementById('results-section');
-    
-    if (!currentDuplicates || currentDuplicates.length === 0) {
-        resultsSection.style.display = 'block';
-        container.innerHTML = `
-            <div class="empty-state">
-                <h3>No se encontraron duplicados</h3>
-                <p>Los archivos en las rutas seleccionadas son únicos.</p>
-            </div>
-        `;
-        document.getElementById('stats').innerHTML = '';
-        return;
-    }
-    
-    resultsSection.style.display = 'block';
-    
-    const totalGroups = currentDuplicates.length;
-    const totalFiles = currentDuplicates.reduce((sum, g) => sum + g.count, 0);
-    const totalSize = currentDuplicates.reduce((sum, g) => sum + (g.size * g.count), 0);
-    const wastedSpace = currentDuplicates.reduce((sum, g) => sum + (g.size * (g.count - 1)), 0);
-    
-    document.getElementById('stats').innerHTML = `
+function renderStats(duplicates) {
+    const totalGroups = duplicates.length;
+    const totalFiles = duplicates.reduce((sum, g) => sum + g.count, 0);
+    const totalSize = duplicates.reduce((sum, g) => sum + (g.size * g.count), 0);
+    const wastedSpace = duplicates.reduce((sum, g) => sum + (g.size * (g.count - 1)), 0);
+
+    dom.stats().innerHTML = `
         <div class="stat-box">
             <div class="stat-num">${totalGroups}</div>
             <div class="stat-label">Grupos de duplicados</div>
@@ -381,44 +479,76 @@ function renderDuplicates() {
             <div class="stat-label">Espacio desperdiciado</div>
         </div>
     `;
-    
-    container.innerHTML = currentDuplicates.map((group, groupIndex) => {
-        const groupId = `group-${groupIndex}`;
-        return `
-            <div class="grupo" id="${groupId}">
-                <div class="grupo-header">
-                    <span class="hash">${group.hash}</span>
-                    <div class="group-info">
-                        <div>${group.count} archivos</div>
-                        <div>${formatSize(group.size)} c/u</div>
-                    </div>
-                </div>
-                <div class="group-files">
-                    ${group.files.map((file, fileIndex) => `
-                        <div class="archivo">
-                            <input type="radio" 
-                                   name="keep-${groupIndex}" 
-                                   value="${escapeHtml(file.path)}"
-                                   ${fileIndex === 0 ? 'checked' : ''}
-                                   onchange="groupSelections[${groupIndex}] = '${escapeHtml(file.path)}'">
-                            <div class="archivo-info">
-                                <div class="ruta">${escapeHtml(file.path)}</div>
-                                <div class="meta">
-                                    ${escapeHtml(file.name)} | ${formatSize(file.size)} | ${formatDate(file.modified)}
-                                </div>
-                            </div>
-                            <div class="acciones">
-                                <button class="btn-eliminar" onclick="singleAction('delete', '${escapeHtml(file.path)}')">🗑️ Eliminar</button>
-                                <button class="btn-mover" onclick="singleAction('move_review', '${escapeHtml(file.path)}')">📂 Revisar</button>
-                                <button class="btn-icon" onclick="singleAction('rename', '${escapeHtml(file.path)}')">🏷️ Renombrar</button>
-                                <button class="btn-mantener" onclick="singleAction('consolidate', '${escapeHtml(file.path)}')">📦 Consolidar</button>
-                            </div>
-                        </div>
-                    `).join('')}
+}
+
+function renderEmptyState() {
+    dom.duplicatesContainer().innerHTML = `
+        <div class="empty-state">
+            <h3>No se encontraron duplicados</h3>
+            <p>Los archivos en las rutas seleccionadas son únicos.</p>
+        </div>
+    `;
+    dom.stats().innerHTML = '';
+}
+
+function renderGroup(group, groupIndex) {
+    const groupId = `group-${groupIndex}`;
+    return `
+        <div class="grupo" id="${groupId}">
+            <div class="grupo-header">
+                <span class="hash">${group.hash}</span>
+                <div class="group-info">
+                    <div>${group.count} archivos</div>
+                    <div>${formatSize(group.size)} c/u</div>
                 </div>
             </div>
-        `;
-    }).join('');
+            <div class="group-files">
+                ${group.files.map((file, fileIndex) => {
+                    const fileId = `${groupIndex}::${fileIndex}`;
+                    fileIdentityMap[fileId] = file.path;
+                    return `
+                    <div class="archivo">
+                        <input type="radio" 
+                               name="keep-${groupIndex}" 
+                               value="${fileId}"
+                               ${fileIndex === 0 ? 'checked' : ''}>
+                        <div class="archivo-info">
+                            <div class="ruta">${escapeHtml(file.path)}</div>
+                            <div class="meta">
+                                ${escapeHtml(file.name)} | ${formatSize(file.size)} | ${formatDate(file.modified)}
+                            </div>
+                        </div>
+                        <div class="acciones">
+                            <button class="btn-eliminar file-action-btn" type="button" data-action="delete" data-file-id="${fileId}">🗑️ Eliminar</button>
+                            <button class="btn-mover file-action-btn" type="button" data-action="move_review" data-file-id="${fileId}">📂 Revisar</button>
+                            <button class="btn-icon file-action-btn" type="button" data-action="rename" data-file-id="${fileId}">🏷️ Renombrar</button>
+                            <button class="btn-mantener file-action-btn" type="button" data-action="consolidate" data-file-id="${fileId}">📦 Consolidar</button>
+                        </div>
+                    </div>
+                `;
+                }).join('')}
+            </div>
+        </div>
+    `;
+}
+
+function renderDuplicates() {
+    fileIdentityMap = {};
+    const resultsSection = dom.resultsSection();
+    const duplicatesContainer = dom.duplicatesContainer();
+    if (!resultsSection || !duplicatesContainer) return;
+
+    if (!currentDuplicates || currentDuplicates.length === 0) {
+        resultsSection.style.display = 'block';
+        renderEmptyState();
+        return;
+    }
+
+    resultsSection.style.display = 'block';
+    renderStats(currentDuplicates);
+    duplicatesContainer.innerHTML = currentDuplicates
+        .map((group, groupIndex) => renderGroup(group, groupIndex))
+        .join('');
 }
 
 function escapeHtml(text) {
@@ -429,7 +559,8 @@ function escapeHtml(text) {
 
 function getSelectedKeepPath(groupIndex) {
     const radio = document.querySelector(`input[name="keep-${groupIndex}"]:checked`);
-    return radio ? radio.value : null;
+    if (!radio) return null;
+    return fileIdentityMap[radio.value] || null;
 }
 
 function selectAllKeep(strategy) {
@@ -447,9 +578,13 @@ function selectAllKeep(strategy) {
         }
         
         if (selectedPath) {
-            const radio = document.querySelector(`input[name="keep-${index}"][value="${CSS.escape(selectedPath)}"]`);
-            if (radio) radio.checked = true;
-            groupSelections[index] = selectedPath;
+            const currentGroup = currentDuplicates[index];
+            const fileIndex = currentGroup.files.findIndex(f => f.path === selectedPath);
+            if (fileIndex >= 0) {
+                const fileId = `${index}::${fileIndex}`;
+                const radio = document.querySelector(`input[name="keep-${index}"][value="${fileId}"]`);
+                if (radio) radio.checked = true;
+            }
         }
     });
     
@@ -458,110 +593,146 @@ function selectAllKeep(strategy) {
 
 function applyBulkAction(action) {
     const filesToProcess = [];
-    const keepPaths = [];
-    
+
     currentDuplicates.forEach((group, index) => {
         const keep = getSelectedKeepPath(index);
         if (!keep) return;
-        
-        keepPaths.push(keep);
+
         group.files.forEach(file => {
             if (file.path !== keep) {
                 filesToProcess.push(file.path);
             }
         });
     });
-    
+
     if (filesToProcess.length === 0) {
         showToast('No hay archivos para procesar', 'info');
         return;
     }
-    
-    const confirmMsg = action === 'delete' 
+
+    const confirmMsg = action === 'delete'
         ? `¿Eliminar ${filesToProcess.length} archivos duplicados? Esta acción no se puede deshacer.`
         : `¿${action === 'move_review' ? 'Mover' : action === 'rename' ? 'Renombrar' : 'Consolidar'} ${filesToProcess.length} archivos?`;
-    
+
     if (!confirm(confirmMsg)) return;
-    
-    const outputPath = document.getElementById('output-path').value.trim();
-    const reviewPath = document.getElementById('review-path').value.trim();
-    
-    fetch('/api/action', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            action,
-            files: filesToProcess,
-            output_path: outputPath,
-            review_path: reviewPath
+
+    const { outputPath, reviewPath } = getCurrentConfigValues();
+
+    apiPost('/api/action', {
+        action,
+        files: filesToProcess,
+        output_path: outputPath,
+        review_path: reviewPath
+    })
+        .then(data => {
+            if (data.success) {
+                const successCount = data.results.filter(r => r.success).length;
+                const failCount = data.results.filter(r => !r.success).length;
+                showToast(`${successCount} archivos procesados. ${failCount} errores.`, successCount > 0 ? 'success' : 'error');
+
+                data.results.forEach(result => {
+                    if (result.success) {
+                        currentDuplicates.forEach(group => {
+                            group.files = group.files.filter(f => f.path !== result.file);
+                        });
+                    }
+                });
+
+                currentDuplicates = currentDuplicates.filter(g => g.files.length > 1);
+                renderDuplicates();
+            } else {
+                showToast(data.message, 'error');
+            }
         })
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            const successCount = data.results.filter(r => r.success).length;
-            const failCount = data.results.filter(r => !r.success).length;
-            showToast(`${successCount} archivos procesados. ${failCount} errores.`, successCount > 0 ? 'success' : 'error');
-            
-            data.results.forEach(result => {
-                if (result.success) {
-                    currentDuplicates.forEach(group => {
-                        group.files = group.files.filter(f => f.path !== result.file);
-                    });
-                }
-            });
-            
-            currentDuplicates = currentDuplicates.filter(g => g.files.length > 1);
-            renderDuplicates();
-        } else {
-            showToast(data.message, 'error');
-        }
-    })
-    .catch(err => showToast('Error: ' + err, 'error'));
+        .catch(err => showToast('Error: ' + normalizeError(err), 'error'));
 }
 
 function singleAction(action, filepath) {
-    const outputPath = document.getElementById('output-path').value.trim();
-    const reviewPath = document.getElementById('review-path').value.trim();
-    
+    const { outputPath, reviewPath } = getCurrentConfigValues();
+
     if (action === 'delete') {
         if (!confirm(`¿Eliminar ${filepath}?`)) return;
     }
-    
-    fetch('/api/action', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            action,
-            files: [filepath],
-            output_path: outputPath,
-            review_path: reviewPath
-        })
+
+    apiPost('/api/action', {
+        action,
+        files: [filepath],
+        output_path: outputPath,
+        review_path: reviewPath
     })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success && data.results.length > 0) {
-            const result = data.results[0];
-            showToast(result.message, result.success ? 'success' : 'error');
-            
-            if (result.success) {
-                currentDuplicates.forEach(group => {
-                    group.files = group.files.filter(f => f.path !== filepath);
-                });
-                currentDuplicates = currentDuplicates.filter(g => g.files.length > 1);
-                renderDuplicates();
+        .then(data => {
+            if (data.success && data.results.length > 0) {
+                const result = data.results[0];
+                showToast(result.message, result.success ? 'success' : 'error');
+
+                if (result.success) {
+                    currentDuplicates.forEach(group => {
+                        group.files = group.files.filter(f => f.path !== filepath);
+                    });
+                    currentDuplicates = currentDuplicates.filter(g => g.files.length > 1);
+                    renderDuplicates();
+                }
             }
-        }
-    })
-    .catch(err => showToast('Error: ' + err, 'error'));
+        })
+        .catch(err => showToast('Error: ' + normalizeError(err), 'error'));
 }
 
 function showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
+    if (!toast) return;
+
     toast.textContent = message;
     toast.className = `toast ${type} show`;
-    
+
     setTimeout(() => {
         toast.classList.remove('show');
     }, 4000);
 }
+
+document.addEventListener('click', (event) => {
+    const target = event.target;
+
+    if (!(target instanceof Element)) return;
+
+    const filterItem = target.closest('.filtro-item');
+    if (filterItem) {
+        if (!target.matches('input[type="checkbox"]')) {
+            toggleFilter(filterItem);
+        }
+        return;
+    }
+
+    const browseBtn = target.closest('.btn-browse');
+    if (browseBtn) {
+        const row = browseBtn.closest('.ruta-item');
+        if (!row) return;
+
+        if (row.querySelector('#output-path')) {
+            browseOutputPath();
+            return;
+        }
+        if (row.querySelector('#review-path')) {
+            browseReviewPath();
+            return;
+        }
+        browseFolder(browseBtn);
+        return;
+    }
+
+    const removeBtn = target.closest('.btn-remove');
+    if (removeBtn) {
+        removePath(removeBtn);
+        return;
+    }
+
+    const actionBtn = target.closest('.file-action-btn');
+    if (actionBtn) {
+        const action = actionBtn.getAttribute('data-action');
+        const fileId = actionBtn.getAttribute('data-file-id');
+        const filepath = fileIdentityMap[fileId];
+
+        if (action && filepath) {
+            singleAction(action, filepath);
+        }
+    }
+});
