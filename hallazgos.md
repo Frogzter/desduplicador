@@ -1,206 +1,206 @@
 # Hallazgos de Revisión de Código - DesDuplicador
 
-**Fecha:** 2026-06-09 (Segunda revisión post-arreglos)
-**Alcance:** app.py, static/js/app.js, templates/index.html, static/css/style.css, tests/test_app.py
+**Fecha:** 2026-06-08
+**Alcance:** app.py, static/js/app.js, templates/index.html, static/css/style.css
 
 ---
 
-## Resumen Ejecutivo
+## Resumen
 
-La segunda revisión confirma que **todos los issues críticos y altos de la primera ronda fueron resueltos correctamente**. Se detectaron **2 issues menores** nuevos y **3 issues de baja prioridad** que persisten.
-
-| Estado | Crítico | Alto | Medio | Bajo |
-|--------|---------|------|-------|------|
-| Resueltos ✅ | 3/3 | 5/5 | 6/8 | 3/6 |
-| Pendientes ⏳ | 0 | 0 | 2 | 3 |
-| Nuevos 🆕 | 0 | 0 | 1 | 1 |
-
----
-
-## Issues Resueltos ✅
-
-### Críticos (todos resueltos)
-
-| ID | Issue | Arreglo aplicado | Verificado |
-|----|-------|-------------------|------------|
-| CRIT-1 | Bomba de I/O: `load_config()` por cada archivo | `tamano_min_video` pasa como parámetro a `archivo_pasa_filtro()` | ✅ Tests pasan |
-| CRIT-2 | Código muerto `_browse_ifiledialog` requería `comtypes` | Función eliminada por completo | ✅ No aparece en el código |
-| CRIT-3 | XSS vía `innerHTML` con rutas de usuario | `renderGroup()` reescrito con `document.createElement()` + `textContent` | ✅ Revisado línea por línea |
-
-### Altos (todos resueltos)
-
-| ID | Issue | Arreglo aplicado | Verificado |
-|----|-------|-------------------|------------|
-| HIGH-1 | Race condition en config/progress | `threading.Lock()` (`config_lock`) envuelve todas las operaciones de archivo | ✅ Revisado en `load_config`, `save_config`, `save_progress`, `load_progress` |
-| HIGH-2 | Sin validación de rutas en `/api/action` | `_is_path_allowed()` verifica que cada archivo esté dentro de las rutas configuradas usando `Path.relative_to()` | ✅ Test `test_action_path_validation` pasa |
-| HIGH-3 | `fileIdentityMap` con índices inestables | Eliminado completamente. Ahora `radio.value = file.path` y `data-file-id = file.path` | ✅ No hay mapa de índices |
-| HIGH-4 | Copia parcial silenciosa en consolidate | Se verifica `dest.exists()` y `dest.stat().st_size == src.stat().st_size` antes de `src.unlink()` | ✅ Revisado en línea 411-414 |
-| HIGH-5 | Progress no refleja filtrado | Paso intermedio "Filtrando archivos..." agregado con `filtrados_count` | ✅ Líneas 246-262 |
-
-### Medios (resueltos)
-
-| ID | Issue | Arreglo aplicado | Verificado |
-|----|-------|-------------------|------------|
-| MED-1 | Código muerto `_browse_ifiledialog` | Eliminado | ✅ |
-| MED-2 | Import `emit` no usado | Removido de `from flask_socketio import SocketIO, emit` → `import SocketIO` | ✅ |
-| MED-5 | `onclick` inline mezclado con event delegation | Todos los `onclick` removidos del HTML. Event delegation maneja todo vía `data-action`, clases CSS y `closest()` | ✅ `grep onclick templates/index.html` retorna vacío |
-| MED-6 | Imports dentro de funciones | `subprocess`, `tempfile`, `logging`, `ctypes.wintypes` movidos a top-level | ✅ Revisado en imports |
-| MED-7 | Sin tests | 24 tests pytest agregados con cobertura de categorías, filtros, format_size, escape_html, endpoints Flask, config roundtrip | ✅ `24 passed in 0.26s` |
-| MED-8 | `escapeHtml` incompleto | Ahora escapa `& " ' < >` | ✅ Revisado línea 622-630 |
-
-### Bajos (resueltos)
-
-| ID | Issue | Arreglo aplicado | Verificado |
-|----|-------|-------------------|------------|
-| LOW-1 | Número mágico `17` | Constante `CSIDL_DRIVES = 0x0011` | ✅ Línea 40 |
-| LOW-2 | `print()` en vez de logging | `logger.error()` / `logger.warning()` | ✅ Líneas 148, 453, 529, 564 |
-| LOW-3 | `data/*.json` trackeado e ignorado | `git rm --cached` aplicado | ✅ `D data/config.json` en git status |
-| LOW-4 | TODO.md sin actualizar | Actualizado con checklist completo | ✅ |
-| LOW-6 | Sin `.editorconfig` | Agregado con reglas para Python, JS, HTML, CSS | ✅ |
+| Severidad | Cantidad | Descripción |
+|-----------|----------|-------------|
+| Crítico | 3 | Bugs que causan crashes, pérdida de datos o vulnerabilidades de seguridad |
+| Alto | 5 | Issues que causan degradación de rendimiento o problemas de confiabilidad |
+| Medio | 8 | Code smells, problemas de mantenibilidad, faltan mejores prácticas |
+| Bajo | 6 | Mejoras menores, inconsistencias de estilo |
 
 ---
 
-## Nuevos Hallazgos 🆕
+## Issues Críticos
 
-### NUEVO-MED-1: Logger sin configuración (app.py:39)
+### CRIT-1: Bomba de I/O en la función de filtro (`app.py:69`)
 
-**Problema:** `logger = logging.getLogger('desduplicador')` se crea pero nunca se configura con un `Handler` o nivel. En Python, un logger sin handlers no emite mensajes por defecto (a menos que la raíz tenga un handler configurado).
+**Problema:** `archivo_pasa_filtro()` llama `load_config()` **por cada archivo** durante el escaneo. Esto lee `data/config.json` del disco repetidamente — potencialmente miles o millones de veces.
 
-**Impacto:** Los mensajes de `logger.error()` y `logger.warning()` se pierden silenciosamente.
-
-**Fix recomendado:**
 ```python
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-```
-
-O más conservador, solo si no hay handlers configurados:
-```python
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-```
-
-**Severidad:** Medio (los errores se pierden en producción)
-
----
-
-### NUEVO-LOW-1: `addPath()` aún usa `innerHTML` (app.js:243)
-
-**Problema:** `addPath()` usa `innerHTML` para construir la fila de ruta:
-```javascript
-row.innerHTML = `
-    <span class="ruta-num">${nextNum}</span>
-    <input type="text" class="path-input" ... value="${escapeHtml(value)}" />
+def archivo_pasa_filtro(archivo_path, filtros_activos, tamano):
     ...
-`;
+    if categoria == 'video' and 'video' in filtros_activos:
+        tamano_min = load_config().get('tamano_min_video', TAMANO_MIN_VIDEO_DEFAULT)  # ¡LECTURA DE DISCO!
 ```
 
-Aunque `escapeHtml()` escapa correctamente para atributos HTML, el patrón `innerHTML` con templates sigue siendo un vector potencial si alguien olvida escapar una variable en el futuro.
+**Impacto:** Escaneo de 100,000 archivos = 100,000 lecturas de disco. El escaneo puede ser **10x-100x más lento** de lo que debería.
 
-**Impacto:** Bajo. Actualmente está protegido por `escapeHtml(value)`.
-
-**Fix recomendado:** Reescribir `addPath()` con `document.createElement()` como se hizo con `renderGroup()`.
+**Fix:** Pasar `tamano_min_video` como parámetro.
 
 ---
 
-## Issues Persistentes ⏳
+### CRIT-2: Dependencia faltante `comtypes` en requirements.txt
 
-### MED-3: Mezcla de español/inglés en identificadores
+**Problema:** `_browse_ifiledialog()` importa `comtypes` y `comtypes.client`, pero `comtypes` **no está** en `requirements.txt`. Si el path de ctypes falla y se alcanza esta función, crashea con `ModuleNotFoundError`.
 
-Sigue presente. Ejemplos:
+**Fix:** Agregar `comtypes` a `requirements.txt` o eliminar este código muerto por completo.
+
+---
+
+### CRIT-3: Vulnerabilidad XSS vía `innerHTML` con rutas de usuario
+
+**Problema:** `static/js/app.js` usa `innerHTML` para renderizar rutas de archivo que vienen del sistema operativo. Un nombre de archivo o carpeta malicioso con HTML/JS se ejecutará en el navegador.
+
+```javascript
+dom.duplicatesContainer().innerHTML = currentDuplicates
+    .map((group, groupIndex) => renderGroup(group, groupIndex))
+    .join('');
+```
+
+La función `escapeHtml()` solo maneja contexto de contenido de texto, no atributos HTML.
+
+**Fix:** Usar `document.createElement()` / `textContent` en vez de `innerHTML` para renderizar duplicados.
+
+---
+
+## Issues Altos
+
+### HIGH-1: Race condition en escrituras de config (`app.py:91`)
+
+`save_config()` se llama desde el hilo de background `scan_worker` y desde el hilo principal de Flask simultáneamente. Ambos hilos pueden intentar escribir a `data/config.json` al mismo tiempo.
+
+**Fix:** Agregar `threading.Lock()` alrededor de las operaciones de archivo de config.
+
+### HIGH-2: Sin validación de rutas en `/api/action`
+
+El endpoint de acción acepta rutas de archivo arbitrarias del cliente y ejecuta `os.remove()`, `shutil.move()`, `shutil.copy2()` sin validación. Un cliente malicioso podría borrar cualquier archivo al que el proceso tenga acceso.
+
+**Fix:** Validar que las rutas están dentro de los directorios de origen configurados antes de actuar.
+
+### HIGH-3: Riesgo de colisión de claves en `fileIdentityMap`
+
+El mapa de identidad de archivos usa `${groupIndex}::${fileIndex}` como claves. Si los resultados se re-renderizan mientras hay acciones pendientes, los índices cambian y las acciones pueden apuntar a archivos equivocados.
+
+**Fix:** Usar la ruta real del archivo como clave, o un UUID estable por archivo.
+
+### HIGH-4: Fallo silencioso de `shutil.copy2` en Consolidar
+
+Si `shutil.copy2()` falla a mitad de camino (disco lleno, permisos denegados), el archivo queda en estado parcial y el original NO se elimina. Pero el mensaje de éxito dice "Copiado a ..." de todas formas.
+
+**Fix:** Verificar que el archivo copiado existe y tiene el tamaño correcto antes de eliminar el original.
+
+### HIGH-5: El progreso no refleja el filtrado
+
+La barra de progreso muestra `total = len(archivos_filtrados)`, pero el conteo inicial cuenta TODOS los archivos. Si los filtros excluyen muchos archivos, la barra salta de 0% a un porcentaje alto después del filtrado.
+
+**Fix:** Agregar un paso de progreso "Filtrando archivos..." entre el conteo y el hashing.
+
+---
+
+## Issues Medios
+
+### MED-1: Código muerto `_browse_ifiledialog`
+
+Esta función siempre lanza una excepción. No sirve para nada y agrega una dependencia innecesaria en `comtypes`.
+
+### MED-2: Import `emit` no usado
+
+`emit` se importa de `flask_socketio` pero nunca se usa directamente. Todas las emisiones van por `socketio.emit()`.
+
+### MED-3: Convención de nombres mezclada español/inglés
+
 - Español: `detectar_categoria`, `archivo_pasa_filtro`, `tamano_min_video`
-- Inglés: `currentDuplicates`, `REQUEST_TIMEOUT_MS`, `normalizeError`, `pickFolder`
+- Inglés: `fileIdentityMap`, `scan_worker`, `currentDuplicates`, `REQUEST_TIMEOUT_MS`
 
-**Impacto:** Mantenibilidad. Dificulta la navegación del código para desarrolladores nuevos.
-
-**Fix recomendado:** Refactorizar a un idioma consistente (español recomendado dado que la UI y el dominio son en español).
-
----
+**Impacto:** Hace el código más difícil de leer y mantener.
 
 ### MED-4: Sin type hints
 
-Ninguna función tiene anotaciones de tipo. Ejemplos que beneficiarían:
+Ninguna función tiene type hints. Esto hace más difícil detectar bugs temprano y que los IDEs den autocompletado.
+
+### MED-5: Mezcla de `onclick` inline + event delegation
+
+Algunos botones usan `onclick="browseFolder(this)"` en HTML, mientras otros usan event delegation en JS. Crea potencial doble-ejecución o confusión.
+
+### MED-6: Imports dentro de funciones
+
+`comtypes`, `subprocess` y `tempfile` se importan dentro del cuerpo de funciones. Esto retrasa errores de importación hasta runtime.
+
+### MED-7: Sin tests unitarios
+
+Cero archivos de test. Los únicos "tests" son scripts ad-hoc inline.
+
+### MED-8: `escapeHtml` no escapa atributos
+
+La función solo escapa para contexto de contenido de texto, no para atributos HTML. Una ruta como `test" onmouseover="alert(1)` podría romper fuera de un atributo.
+
+---
+
+## Issues Bajos
+
+### LOW-1: Número mágico `17` para `RootFolder`
+
 ```python
-def detectar_categoria(archivo_path: str | Path) -> str: ...
-def archivo_pasa_filtro(archivo_path: str, filtros_activos: list[str], tamano: int, tamano_min_video: int | None = None) -> bool: ...
-def format_size(bytes_val: int) -> str: ...
+dialog.RootFolder = 17  # MyComputer = CSIDL_DRIVES
 ```
 
-**Impacto:** Los IDEs no pueden dar autocompletado preciso. Los errores de tipo solo se detectan en runtime.
+### LOW-2: `print()` en vez de logging
 
----
+Los mensajes de error usan `print()` en vez de un framework de logging apropiado.
 
-### LOW-5: CSS sin custom properties
+### LOW-3: `data/config.json` trackeado E ignorado
 
-`style.css` tiene 770+ líneas con colores hardcodeados. No usa CSS custom properties (`:root { --color: #value }`).
+`data/config.json` fue trackeado previamente en git pero ahora está en `.gitignore`. Git todavía lo trackea, causando confusión.
 
-**Impacto:** Cambiar un color del tema requiere buscar y reemplazar múltiples ocurrencias.
+### LOW-4: TODO.md tiene item sin chequear
 
-**Fix recomendado:**
-```css
-:root {
-    --bg-page: #1e1e1e;
-    --bg-section: #252526;
-    --accent-blue: #569cd6;
-    --accent-green: #4ec9b0;
-    --accent-red: #f48771;
-}
+```markdown
+- [ ] Run thorough validation of updated UI flows and interactions.
 ```
 
----
+### LOW-5: Archivo CSS de 770 líneas sin variables
 
-## Arquitectura: Estado Actual
+`style.css` se acerca a 800 líneas sin organización más allá de comentarios. No usa CSS custom properties para los colores del tema.
 
-### Seguridad de hilos ✅
-- `config_lock` protege todas las operaciones de archivo de configuración.
-- `scan_thread` sigue siendo global, pero el chequeo `is_alive()` + el lock de config reduce el riesgo de race conditions.
+### LOW-6: Sin `package.json` ni `eslint`
 
-### Rendimiento ✅
-- Ya no hay lecturas de disco repetidas durante el escaneo.
-- `os.walk()` sigue siendo el cuello de botella para millones de archivos pequeños. `os.scandir()` sería un 2-3x más rápido.
-
-### Seguridad ✅
-- Rutas validadas en `/api/action`.
-- XSS mitigado en el renderizado de duplicados.
-- Sin CSRF protection explícita (Flask no lo tiene habilitado por defecto). Aceptable para uso local.
+No hay herramientas de linting o formatting configuradas para el código JavaScript.
 
 ---
 
-## Tests: Estado Actual
+## Preocupaciones de Arquitectura
 
-**24 tests, todos pasando.**
+### Seguridad de hilos
+La app usa `scan_thread` y `scan_stop_event` globales compartidos entre el handler de requests de Flask (hilo principal) y el worker de escaneo. El chequeo `if scan_thread and scan_thread.is_alive()` no es atómico — dos clicks rápidos podrían iniciar dos escaneos.
 
-| Suite | Tests | Cobertura |
-|-------|-------|-----------|
-| `TestDetectarCategoria` | 8 | Todas las categorías + case insensitive + otros |
-| `TestArchivoPasaFiltro` | 5 | Sin filtros, activo/inactivo, video por tamaño |
-| `TestFormatSize` | 4 | 0 B, KB, MB, GB |
-| `TestEscapeHtml` | 1 | `< > & "` |
-| `TestFlaskEndpoints` | 5 | GET/POST config, filters, last_scan, roundtrip |
-| `TestConfigSaveLoad` | 1 | Save + load con `monkeypatch` de DATA_DIR |
+### Escalabilidad
+- `md5_file()` lee el archivo completo en chunks. Para millones de archivos pequeños, el overhead de `os.walk()` + `Path.stat()` domina.
+- Considerar usar `os.scandir()` en vez de `os.walk()` para mejor rendimiento.
 
-**Calidad de tests:**
-- ✅ Usan `monkeypatch` para aislar `DATA_DIR` (no contaminan config real)
-- ✅ `autouse=True` en el fixture de patch
-- ✅ Cobertura de casos edge (0 bytes, case insensitive, video pequeño)
-- ⏳ Falta: test del endpoint `/api/action` con path permitida
-- ⏳ Falta: test de `/api/browse_folder` (difícil de testear por dependencia de Windows)
+### Seguridad
+- Sin protección CSRF en endpoints POST (la `SECRET_KEY` está seteada pero no se usa para CSRF).
+- Sin rate limiting en endpoints de acción.
+- Las rutas de archivo se aceptan literalmente del cliente sin sanitización.
 
 ---
 
-## Recomendaciones
+## Hallazgos Positivos
 
-### Prioridad Inmediata (antes del siguiente release)
-1. **NUEVO-MED-1**: Configurar el logger para que los errores sean visibles.
+| Hallazgo | Archivo | Notas |
+|----------|---------|-------|
+| Event delegation en JS | `app.js` | Patrón limpio para elementos dinámicos |
+| Capa de abstracción API | `app.js` | `apiRequest`, `apiGet`, `apiPost` con timeout |
+| Helper DOM | `app.js` | Acceso a DOM centralizado con null-safety |
+| Normalización de errores | `app.js` | Manejo consistente de errores |
+| Persistencia de config | `app.py` | Config JSON con defaults |
+| Sistema de filtros | `app.py` | Filtrado limpio por categoría |
+| Consistencia de tema | `style.css` | Coincide con `tema_colores_estilos.md` |
+| Fallback de diálogo | `app.py` | Fallback robusto entre métodos |
 
-### Prioridad Media (próxima iteración)
-2. **MED-3**: Estandarizar nombres a un solo idioma.
-3. **MED-4**: Agregar type hints a funciones públicas.
-4. **NUEVO-LOW-1**: Reescribir `addPath()` sin `innerHTML`.
+---
 
-### Prioridad Baja (cuando haya tiempo)
-5. **LOW-5**: CSS custom properties.
-6. Agregar test de `/api/action` con ruta permitida.
-7. Considerar `os.scandir()` para mejorar rendimiento del escaneo.
+## Orden de Prioridad Recomendado
+
+1. Arreglar **CRIT-1** (bomba I/O) — cambio de una línea, mejora masiva de performance
+2. Arreglar **CRIT-3** (XSS) — fix de seguridad
+3. Arreglar **HIGH-1** (race condition) — agregar `threading.Lock()`
+4. Arreglar **HIGH-2** (validación de rutas) — fix de seguridad
+5. Arreglar **CRIT-2 + MED-1** (eliminar código muerto)
+6. Arreglar **MED-3** (consistencia de nombres)
+7. Agregar **MED-7** (tests)

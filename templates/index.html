@@ -22,30 +22,30 @@
                     <div class="ruta-item">
                         <span class="ruta-num">1</span>
                         <input type="text" class="path-input" placeholder="C:\\Ruta\\Carpeta1" />
-                        <button class="btn-icon btn-browse" type="button" data-action="browse-folder" title="Examinar...">📂</button>
-                        <button class="btn-icon btn-remove" type="button" data-action="remove-path">✕</button>
+                        <button class="btn-icon btn-browse" type="button" title="Examinar...">📂</button>
+                        <button class="btn-icon btn-remove" type="button">✕</button>
                     </div>
                     <div class="ruta-item">
                         <span class="ruta-num">2</span>
                         <input type="text" class="path-input" placeholder="C:\\Ruta\\Carpeta2" />
-                        <button class="btn-icon btn-browse" type="button" data-action="browse-folder" title="Examinar...">📂</button>
-                        <button class="btn-icon btn-remove" type="button" data-action="remove-path">✕</button>
+                        <button class="btn-icon btn-browse" type="button" title="Examinar...">📂</button>
+                        <button class="btn-icon btn-remove" type="button">✕</button>
                     </div>
                 </div>
-                <button class="btn-add" type="button" data-action="add-path">+ Agregar otra ruta</button>
+                <button class="btn-add" type="button">+ Agregar otra ruta</button>
             </div>
 
             <div class="destino-config">
                 <h4>📦 Carpeta de consolidación (archivos depurados):</h4>
                 <div class="ruta-item">
                     <input type="text" id="output-path" placeholder="C:\\Ruta\\Consolidados" />
-                    <button class="btn-icon btn-browse" type="button" data-action="browse-output" title="Examinar...">📂</button>
+                    <button class="btn-icon btn-browse" type="button" title="Examinar...">📂</button>
                 </div>
                 
                 <h4>🔍 Carpeta de "revisar después":</h4>
                 <div class="ruta-item">
                     <input type="text" id="review-path" placeholder="C:\\Ruta\\RevisarDespues" />
-                    <button class="btn-icon btn-browse" type="button" data-action="browse-review" title="Examinar...">📂</button>
+                    <button class="btn-icon btn-browse" type="button" title="Examinar...">📂</button>
                 </div>
             </div>
 
@@ -63,9 +63,9 @@
             </div>
 
             <div class="actions-row">
-                <button class="btn-escanear" id="btn-scan" type="button" data-action="scan-start">🔎 Iniciar Escaneo</button>
-                <button class="btn-cancelar" id="btn-stop" type="button" data-action="scan-stop" disabled>⏹ Detener</button>
-                <button class="btn-guardar" type="button" data-action="save-paths">💾 Guardar Rutas</button>
+                <button class="btn-escanear" id="btn-scan" type="button">🔎 Iniciar Escaneo</button>
+                <button class="btn-cancelar" id="btn-stop" type="button" disabled>⏹ Detener</button>
+                <button class="btn-guardar" type="button">💾 Guardar Rutas</button>
             </div>
         </section>
 
@@ -86,13 +86,13 @@
             <div class="bulk-actions">
                 <h3>⚡ Acciones en Grupo</h3>
                 <div class="bulk-buttons">
-                    <button class="btn-bulk btn-mantener" type="button" data-action="select-all-keep" data-strategy="first">✅ Conservar primero de cada grupo</button>
-                    <button class="btn-bulk btn-mantener" type="button" data-action="select-all-keep" data-strategy="largest">✅ Conservar el más grande</button>
-                    <button class="btn-bulk btn-mantener" type="button" data-action="select-all-keep" data-strategy="newest">✅ Conservar el más reciente</button>
-                    <button class="btn-bulk btn-eliminar" type="button" data-action="apply-bulk-action" data-bulk-action="delete">🗑️ Eliminar seleccionados</button>
-                    <button class="btn-bulk btn-mover" type="button" data-action="apply-bulk-action" data-bulk-action="move_review">📂 Mover a revisar</button>
-                    <button class="btn-bulk" type="button" data-action="apply-bulk-action" data-bulk-action="rename">🏷️ Renombrar duplicados</button>
-                    <button class="btn-bulk btn-mantener" type="button" data-action="apply-bulk-action" data-bulk-action="consolidate">📦 Consolidar</button>
+                    <button class="btn-bulk btn-mantener" type="button" data-bulk-keep="first">✅ Conservar primero de cada grupo</button>
+                    <button class="btn-bulk btn-mantener" type="button" data-bulk-keep="largest">✅ Conservar el más grande</button>
+                    <button class="btn-bulk btn-mantener" type="button" data-bulk-keep="newest">✅ Conservar el más reciente</button>
+                    <button class="btn-bulk btn-eliminar" type="button" data-bulk-action="delete">🗑️ Eliminar seleccionados</button>
+                    <button class="btn-bulk btn-mover" type="button" data-bulk-action="move_review">📂 Mover a revisar</button>
+                    <button class="btn-bulk" type="button" data-bulk-action="rename">🏷️ Renombrar duplicados</button>
+                    <button class="btn-bulk btn-mantener" type="button" data-bulk-action="consolidate">📦 Consolidar</button>
                 </div>
             </div>
 

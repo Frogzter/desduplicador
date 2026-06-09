@@ -37,11 +37,6 @@ PROGRESS_FILE = DATA_DIR / 'progress.json'
 
 config_lock = threading.Lock()
 logger = logging.getLogger('desduplicador')
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
 CSIDL_DRIVES = 0x0011
 
 # === CATEGORIAS DE ARCHIVO ===
