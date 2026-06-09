@@ -1,7 +1,6 @@
 const socket = io();
 
 let currentDuplicates = [];
-let fileIdentityMap = {};
 const REQUEST_TIMEOUT_MS = 15000;
 
 const dom = {
@@ -461,79 +460,147 @@ function renderStats(duplicates) {
     const totalSize = duplicates.reduce((sum, g) => sum + (g.size * g.count), 0);
     const wastedSpace = duplicates.reduce((sum, g) => sum + (g.size * (g.count - 1)), 0);
 
-    dom.stats().innerHTML = `
-        <div class="stat-box">
-            <div class="stat-num">${totalGroups}</div>
-            <div class="stat-label">Grupos de duplicados</div>
-        </div>
-        <div class="stat-box">
-            <div class="stat-num">${totalFiles}</div>
-            <div class="stat-label">Archivos duplicados</div>
-        </div>
-        <div class="stat-box">
-            <div class="stat-num">${formatSize(totalSize)}</div>
-            <div class="stat-label">Espacio total</div>
-        </div>
-        <div class="stat-box">
-            <div class="stat-num">${formatSize(wastedSpace)}</div>
-            <div class="stat-label">Espacio desperdiciado</div>
-        </div>
-    `;
+    const statsEl = dom.stats();
+    if (!statsEl) return;
+    statsEl.innerHTML = '';
+
+    const statsData = [
+        { num: totalGroups, label: 'Grupos de duplicados' },
+        { num: totalFiles, label: 'Archivos duplicados' },
+        { num: formatSize(totalSize), label: 'Espacio total' },
+        { num: formatSize(wastedSpace), label: 'Espacio desperdiciado' }
+    ];
+
+    statsData.forEach(({ num, label }) => {
+        const box = document.createElement('div');
+        box.className = 'stat-box';
+
+        const numEl = document.createElement('div');
+        numEl.className = 'stat-num';
+        numEl.textContent = num;
+
+        const labelEl = document.createElement('div');
+        labelEl.className = 'stat-label';
+        labelEl.textContent = label;
+
+        box.appendChild(numEl);
+        box.appendChild(labelEl);
+        statsEl.appendChild(box);
+    });
 }
 
 function renderEmptyState() {
-    dom.duplicatesContainer().innerHTML = `
-        <div class="empty-state">
-            <h3>No se encontraron duplicados</h3>
-            <p>Los archivos en las rutas seleccionadas son únicos.</p>
-        </div>
-    `;
-    dom.stats().innerHTML = '';
+    const container = dom.duplicatesContainer();
+    if (container) {
+        container.innerHTML = '';
+        const emptyState = document.createElement('div');
+        emptyState.className = 'empty-state';
+
+        const h3 = document.createElement('h3');
+        h3.textContent = 'No se encontraron duplicados';
+
+        const p = document.createElement('p');
+        p.textContent = 'Los archivos en las rutas seleccionadas son únicos.';
+
+        emptyState.appendChild(h3);
+        emptyState.appendChild(p);
+        container.appendChild(emptyState);
+    }
+
+    const statsEl = dom.stats();
+    if (statsEl) {
+        statsEl.innerHTML = '';
+    }
 }
 
 function renderGroup(group, groupIndex) {
-    const groupId = `group-${groupIndex}`;
-    return `
-        <div class="grupo" id="${groupId}">
-            <div class="grupo-header">
-                <span class="hash">${group.hash}</span>
-                <div class="group-info">
-                    <div>${group.count} archivos</div>
-                    <div>${formatSize(group.size)} c/u</div>
-                </div>
-            </div>
-            <div class="group-files">
-                ${group.files.map((file, fileIndex) => {
-                    const fileId = `${groupIndex}::${fileIndex}`;
-                    fileIdentityMap[fileId] = file.path;
-                    return `
-                    <div class="archivo">
-                        <input type="radio" 
-                               name="keep-${groupIndex}" 
-                               value="${fileId}"
-                               ${fileIndex === 0 ? 'checked' : ''}>
-                        <div class="archivo-info">
-                            <div class="ruta">${escapeHtml(file.path)}</div>
-                            <div class="meta">
-                                ${escapeHtml(file.name)} | ${formatSize(file.size)} | ${formatDate(file.modified)}
-                            </div>
-                        </div>
-                        <div class="acciones">
-                            <button class="btn-eliminar file-action-btn" type="button" data-action="delete" data-file-id="${fileId}">🗑️ Eliminar</button>
-                            <button class="btn-mover file-action-btn" type="button" data-action="move_review" data-file-id="${fileId}">📂 Revisar</button>
-                            <button class="btn-icon file-action-btn" type="button" data-action="rename" data-file-id="${fileId}">🏷️ Renombrar</button>
-                            <button class="btn-mantener file-action-btn" type="button" data-action="consolidate" data-file-id="${fileId}">📦 Consolidar</button>
-                        </div>
-                    </div>
-                `;
-                }).join('')}
-            </div>
-        </div>
-    `;
+    const groupEl = document.createElement('div');
+    groupEl.className = 'grupo';
+    groupEl.id = `group-${groupIndex}`;
+
+    const header = document.createElement('div');
+    header.className = 'grupo-header';
+
+    const hashSpan = document.createElement('span');
+    hashSpan.className = 'hash';
+    hashSpan.textContent = group.hash;
+
+    const groupInfo = document.createElement('div');
+    groupInfo.className = 'group-info';
+
+    const countDiv = document.createElement('div');
+    countDiv.textContent = `${group.count} archivos`;
+
+    const sizeDiv = document.createElement('div');
+    sizeDiv.textContent = `${formatSize(group.size)} c/u`;
+
+    groupInfo.appendChild(countDiv);
+    groupInfo.appendChild(sizeDiv);
+
+    header.appendChild(hashSpan);
+    header.appendChild(groupInfo);
+
+    const filesContainer = document.createElement('div');
+    filesContainer.className = 'group-files';
+
+    group.files.forEach((file, fileIndex) => {
+        const fileEl = document.createElement('div');
+        fileEl.className = 'archivo';
+
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = `keep-${groupIndex}`;
+        radio.value = file.path;
+        if (fileIndex === 0) radio.checked = true;
+
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'archivo-info';
+
+        const pathDiv = document.createElement('div');
+        pathDiv.className = 'ruta';
+        pathDiv.textContent = file.path;
+
+        const metaDiv = document.createElement('div');
+        metaDiv.className = 'meta';
+        metaDiv.textContent = `${file.name} | ${formatSize(file.size)} | ${formatDate(file.modified)}`;
+
+        infoDiv.appendChild(pathDiv);
+        infoDiv.appendChild(metaDiv);
+
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'acciones';
+
+        const actions = [
+            { action: 'delete', className: 'btn-eliminar', label: '🗑️ Eliminar' },
+            { action: 'move_review', className: 'btn-mover', label: '📂 Revisar' },
+            { action: 'rename', className: 'btn-icon', label: '🏷️ Renombrar' },
+            { action: 'consolidate', className: 'btn-mantener', label: '📦 Consolidar' }
+        ];
+
+        actions.forEach(({ action, className, label }) => {
+            const btn = document.createElement('button');
+            btn.className = `${className} file-action-btn`;
+            btn.type = 'button';
+            btn.setAttribute('data-action', action);
+            btn.setAttribute('data-file-id', file.path);
+            btn.textContent = label;
+            actionsDiv.appendChild(btn);
+        });
+
+        fileEl.appendChild(radio);
+        fileEl.appendChild(infoDiv);
+        fileEl.appendChild(actionsDiv);
+
+        filesContainer.appendChild(fileEl);
+    });
+
+    groupEl.appendChild(header);
+    groupEl.appendChild(filesContainer);
+
+    return groupEl;
 }
 
 function renderDuplicates() {
-    fileIdentityMap = {};
     const resultsSection = dom.resultsSection();
     const duplicatesContainer = dom.duplicatesContainer();
     if (!resultsSection || !duplicatesContainer) return;
@@ -546,21 +613,26 @@ function renderDuplicates() {
 
     resultsSection.style.display = 'block';
     renderStats(currentDuplicates);
-    duplicatesContainer.innerHTML = currentDuplicates
-        .map((group, groupIndex) => renderGroup(group, groupIndex))
-        .join('');
+    duplicatesContainer.innerHTML = '';
+    currentDuplicates.forEach((group, groupIndex) => {
+        duplicatesContainer.appendChild(renderGroup(group, groupIndex));
+    });
 }
 
 function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    if (text == null) return '';
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
 }
 
 function getSelectedKeepPath(groupIndex) {
     const radio = document.querySelector(`input[name="keep-${groupIndex}"]:checked`);
     if (!radio) return null;
-    return fileIdentityMap[radio.value] || null;
+    return radio.value || null;
 }
 
 function selectAllKeep(strategy) {
@@ -578,13 +650,12 @@ function selectAllKeep(strategy) {
         }
         
         if (selectedPath) {
-            const currentGroup = currentDuplicates[index];
-            const fileIndex = currentGroup.files.findIndex(f => f.path === selectedPath);
-            if (fileIndex >= 0) {
-                const fileId = `${index}::${fileIndex}`;
-                const radio = document.querySelector(`input[name="keep-${index}"][value="${fileId}"]`);
-                if (radio) radio.checked = true;
-            }
+            const radios = document.querySelectorAll(`input[name="keep-${index}"]`);
+            radios.forEach(radio => {
+                if (radio.value === selectedPath) {
+                    radio.checked = true;
+                }
+            });
         }
     });
     
@@ -725,11 +796,42 @@ document.addEventListener('click', (event) => {
         return;
     }
 
+    if (target.closest('.btn-add')) {
+        addPathWithDialog();
+        return;
+    }
+
+    if (target.closest('.btn-escanear')) {
+        startScan();
+        return;
+    }
+
+    if (target.closest('.btn-cancelar')) {
+        stopScan();
+        return;
+    }
+
+    if (target.closest('.btn-guardar')) {
+        savePaths();
+        return;
+    }
+
+    const bulkKeepBtn = target.closest('[data-bulk-keep]');
+    if (bulkKeepBtn) {
+        selectAllKeep(bulkKeepBtn.getAttribute('data-bulk-keep'));
+        return;
+    }
+
+    const bulkActionBtn = target.closest('[data-bulk-action]');
+    if (bulkActionBtn) {
+        applyBulkAction(bulkActionBtn.getAttribute('data-bulk-action'));
+        return;
+    }
+
     const actionBtn = target.closest('.file-action-btn');
     if (actionBtn) {
         const action = actionBtn.getAttribute('data-action');
-        const fileId = actionBtn.getAttribute('data-file-id');
-        const filepath = fileIdentityMap[fileId];
+        const filepath = actionBtn.getAttribute('data-file-id');
 
         if (action && filepath) {
             singleAction(action, filepath);

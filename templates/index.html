@@ -22,30 +22,30 @@
                     <div class="ruta-item">
                         <span class="ruta-num">1</span>
                         <input type="text" class="path-input" placeholder="C:\\Ruta\\Carpeta1" />
-                        <button class="btn-icon btn-browse" onclick="browseFolder(this)" title="Examinar...">📂</button>
-                        <button class="btn-icon btn-remove" onclick="removePath(this)">✕</button>
+                        <button class="btn-icon btn-browse" type="button" title="Examinar...">📂</button>
+                        <button class="btn-icon btn-remove" type="button">✕</button>
                     </div>
                     <div class="ruta-item">
                         <span class="ruta-num">2</span>
                         <input type="text" class="path-input" placeholder="C:\\Ruta\\Carpeta2" />
-                        <button class="btn-icon btn-browse" onclick="browseFolder(this)" title="Examinar...">📂</button>
-                        <button class="btn-icon btn-remove" onclick="removePath(this)">✕</button>
+                        <button class="btn-icon btn-browse" type="button" title="Examinar...">📂</button>
+                        <button class="btn-icon btn-remove" type="button">✕</button>
                     </div>
                 </div>
-                <button class="btn-add" onclick="addPathWithDialog()">+ Agregar otra ruta</button>
+                <button class="btn-add" type="button">+ Agregar otra ruta</button>
             </div>
 
             <div class="destino-config">
                 <h4>📦 Carpeta de consolidación (archivos depurados):</h4>
                 <div class="ruta-item">
                     <input type="text" id="output-path" placeholder="C:\\Ruta\\Consolidados" />
-                    <button class="btn-icon btn-browse" onclick="browseOutputPath()" title="Examinar...">📂</button>
+                    <button class="btn-icon btn-browse" type="button" title="Examinar...">📂</button>
                 </div>
                 
                 <h4>🔍 Carpeta de "revisar después":</h4>
                 <div class="ruta-item">
                     <input type="text" id="review-path" placeholder="C:\\Ruta\\RevisarDespues" />
-                    <button class="btn-icon btn-browse" onclick="browseReviewPath()" title="Examinar...">📂</button>
+                    <button class="btn-icon btn-browse" type="button" title="Examinar...">📂</button>
                 </div>
             </div>
 
@@ -63,9 +63,9 @@
             </div>
 
             <div class="actions-row">
-                <button class="btn-escanear" id="btn-scan" onclick="startScan()">🔎 Iniciar Escaneo</button>
-                <button class="btn-cancelar" id="btn-stop" onclick="stopScan()" disabled>⏹ Detener</button>
-                <button class="btn-guardar" onclick="savePaths()">💾 Guardar Rutas</button>
+                <button class="btn-escanear" id="btn-scan" type="button">🔎 Iniciar Escaneo</button>
+                <button class="btn-cancelar" id="btn-stop" type="button" disabled>⏹ Detener</button>
+                <button class="btn-guardar" type="button">💾 Guardar Rutas</button>
             </div>
         </section>
 
@@ -86,13 +86,13 @@
             <div class="bulk-actions">
                 <h3>⚡ Acciones en Grupo</h3>
                 <div class="bulk-buttons">
-                    <button class="btn-bulk btn-mantener" onclick="selectAllKeep('first')">✅ Conservar primero de cada grupo</button>
-                    <button class="btn-bulk btn-mantener" onclick="selectAllKeep('largest')">✅ Conservar el más grande</button>
-                    <button class="btn-bulk btn-mantener" onclick="selectAllKeep('newest')">✅ Conservar el más reciente</button>
-                    <button class="btn-bulk btn-eliminar" onclick="applyBulkAction('delete')">🗑️ Eliminar seleccionados</button>
-                    <button class="btn-bulk btn-mover" onclick="applyBulkAction('move_review')">📂 Mover a revisar</button>
-                    <button class="btn-bulk" onclick="applyBulkAction('rename')">🏷️ Renombrar duplicados</button>
-                    <button class="btn-bulk btn-mantener" onclick="applyBulkAction('consolidate')">📦 Consolidar</button>
+                    <button class="btn-bulk btn-mantener" type="button" data-bulk-keep="first">✅ Conservar primero de cada grupo</button>
+                    <button class="btn-bulk btn-mantener" type="button" data-bulk-keep="largest">✅ Conservar el más grande</button>
+                    <button class="btn-bulk btn-mantener" type="button" data-bulk-keep="newest">✅ Conservar el más reciente</button>
+                    <button class="btn-bulk btn-eliminar" type="button" data-bulk-action="delete">🗑️ Eliminar seleccionados</button>
+                    <button class="btn-bulk btn-mover" type="button" data-bulk-action="move_review">📂 Mover a revisar</button>
+                    <button class="btn-bulk" type="button" data-bulk-action="rename">🏷️ Renombrar duplicados</button>
+                    <button class="btn-bulk btn-mantener" type="button" data-bulk-action="consolidate">📦 Consolidar</button>
                 </div>
             </div>
 

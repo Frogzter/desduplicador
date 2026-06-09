@@ -1,12 +1,17 @@
+import html
+import math
 import os
 import hashlib
 import json
 import shutil
 import threading
 import ctypes
+import logging
+import subprocess
+import tempfile
 from pathlib import Path
 from flask import Flask, render_template, jsonify, request
-from flask_socketio import SocketIO, emit
+from flask_socketio import SocketIO
 
 # Windows COM imports for folder dialog
 import platform
@@ -30,6 +35,10 @@ DATA_DIR.mkdir(exist_ok=True)
 CONFIG_FILE = DATA_DIR / 'config.json'
 PROGRESS_FILE = DATA_DIR / 'progress.json'
 
+config_lock = threading.Lock()
+logger = logging.getLogger('desduplicador')
+CSIDL_DRIVES = 0x0011
+
 # === CATEGORIAS DE ARCHIVO ===
 EXTENSIONES = {
     'musica': ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.wma', '.opus', '.aiff'],
@@ -44,6 +53,26 @@ EXTENSIONES = {
 TAMANO_MIN_VIDEO_DEFAULT = 1 * 1024 * 1024  # 1 MB
 
 
+def format_size(bytes_val):
+    """Formatea un tamaño en bytes a una cadena legible."""
+    if bytes_val == 0:
+        return '0 B'
+    k = 1024
+    sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+    i = int(math.floor(math.log(bytes_val) / math.log(k)))
+    i = min(i, len(sizes) - 1)
+    val = bytes_val / (k ** i)
+    s = f"{val:.2f}"
+    if '.' in s:
+        s = s.rstrip('0').rstrip('.')
+    return f"{s} {sizes[i]}"
+
+
+def escape_html(text):
+    """Escapa caracteres HTML especiales."""
+    return html.escape(str(text))
+
+
 def detectar_categoria(archivo_path):
     """Detecta la categoría de un archivo por su extensión."""
     ext = Path(archivo_path).suffix.lower()
@@ -53,7 +82,7 @@ def detectar_categoria(archivo_path):
     return 'otros'
 
 
-def archivo_pasa_filtro(archivo_path, filtros_activos, tamano):
+def archivo_pasa_filtro(archivo_path, filtros_activos, tamano, tamano_min_video=None):
     """Verifica si un archivo pasa los filtros seleccionados."""
     if not filtros_activos:
         return True  # Sin filtros = todo pasa
@@ -66,8 +95,9 @@ def archivo_pasa_filtro(archivo_path, filtros_activos, tamano):
 
     # Filtro especial para videos por tamaño
     if categoria == 'video' and 'video' in filtros_activos:
-        tamano_min = load_config().get('tamano_min_video', TAMANO_MIN_VIDEO_DEFAULT)
-        if tamano < tamano_min:
+        if tamano_min_video is None:
+            tamano_min_video = TAMANO_MIN_VIDEO_DEFAULT
+        if tamano < tamano_min_video:
             return False
 
     return True
@@ -83,24 +113,28 @@ default_config = {
 }
 
 def load_config():
-    if CONFIG_FILE.exists():
-        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return default_config.copy()
+    with config_lock:
+        if CONFIG_FILE.exists():
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return default_config.copy()
 
 def save_config(config):
-    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-        json.dump(config, f, ensure_ascii=False, indent=2)
+    with config_lock:
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
 
 def save_progress(progress):
-    with open(PROGRESS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(progress, f, ensure_ascii=False, indent=2)
+    with config_lock:
+        with open(PROGRESS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(progress, f, ensure_ascii=False, indent=2)
 
 def load_progress():
-    if PROGRESS_FILE.exists():
-        with open(PROGRESS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {'status': 'idle', 'current': 0, 'total': 0, 'message': ''}
+    with config_lock:
+        if PROGRESS_FILE.exists():
+            with open(PROGRESS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return {'status': 'idle', 'current': 0, 'total': 0, 'message': ''}
 
 def md5_file(filepath, chunk_size=8192):
     """Calcula el hash MD5 de un archivo."""
@@ -111,7 +145,7 @@ def md5_file(filepath, chunk_size=8192):
                 hasher.update(chunk)
         return hasher.hexdigest()
     except Exception as e:
-        print(f"Error leyendo {filepath}: {e}")
+        logger.error(f"Error leyendo {filepath}: {e}")
         return None
 
 # Variable global para controlar el escaneo
@@ -162,12 +196,12 @@ def handle_start_scan(data):
     global scan_thread, scan_stop_event
     
     if scan_thread and scan_thread.is_alive():
-        emit('scan_error', {'message': 'Ya hay un escaneo en curso'})
+        socketio.emit('scan_error', {'message': 'Ya hay un escaneo en curso'})
         return
     
     paths = data.get('paths', [])
     if not paths or len(paths) < 2:
-        emit('scan_error', {'message': 'Se necesitan al menos 2 rutas'})
+        socketio.emit('scan_error', {'message': 'Se necesitan al menos 2 rutas'})
         return
     
     # Guardar rutas en config
@@ -182,7 +216,7 @@ def handle_start_scan(data):
 @socketio.on('stop_scan')
 def handle_stop_scan():
     scan_stop_event.set()
-    emit('scan_stopped', {})
+    socketio.emit('scan_stopped', {})
 
 def scan_worker(paths):
     """Worker que escanea archivos y encuentra duplicados."""
@@ -209,11 +243,15 @@ def scan_worker(paths):
                         all_files.append(Path(root) / filename)
         
         # Aplicar filtros por categoria
+        save_progress({'status': 'scanning', 'current': 0, 'total': len(all_files), 'message': 'Filtrando archivos...'})
+        socketio.emit('scan_progress', {'current': 0, 'total': len(all_files), 'message': 'Filtrando archivos...'})
+        
         archivos_filtrados = []
+        tamano_min_video = config.get('tamano_min_video', TAMANO_MIN_VIDEO_DEFAULT)
         for filepath in all_files:
             try:
                 tamano = filepath.stat().st_size
-                if archivo_pasa_filtro(str(filepath), filtros_activos, tamano):
+                if archivo_pasa_filtro(str(filepath), filtros_activos, tamano, tamano_min_video):
                     archivos_filtrados.append(filepath)
             except Exception:
                 pass  # Si no podemos leer el archivo, lo saltamos
@@ -293,6 +331,23 @@ def handle_action():
     if not files:
         return jsonify({'success': False, 'message': 'No hay archivos para procesar'})
     
+    config = load_config()
+    allowed_paths = [Path(p).resolve() for p in config.get('paths', [])]
+    
+    def _is_path_allowed(target_path):
+        target = Path(target_path).resolve()
+        for allowed in allowed_paths:
+            try:
+                target.relative_to(allowed)
+                return True
+            except ValueError:
+                continue
+        return False
+    
+    for filepath in files:
+        if not _is_path_allowed(filepath):
+            return jsonify({'success': False, 'message': f'Ruta no permitida: {filepath}'})
+    
     results = []
     
     for filepath in files:
@@ -353,7 +408,11 @@ def handle_action():
                     dest = dest_dir / f"{stem}_{counter:03d}{suffix}"
                     counter += 1
                 shutil.copy2(str(src), str(dest))
-                results.append({'file': filepath, 'success': True, 'message': f'Copiado a {dest}'})
+                if not dest.exists() or dest.stat().st_size != src.stat().st_size:
+                    results.append({'file': filepath, 'success': False, 'message': 'Error de copia: tamaño no coincide'})
+                    continue
+                src.unlink()
+                results.append({'file': filepath, 'success': True, 'message': f'Consolidado a {dest}'})
             
             else:
                 results.append({'file': filepath, 'success': False, 'message': 'Acción desconocida'})
@@ -382,7 +441,7 @@ def browse_folder():
             dialog = FolderBrowserDialog()
             dialog.Description = title
             dialog.ShowNewFolderButton = True
-            dialog.RootFolder = 17  # MyComputer = CSIDL_DRIVES
+            dialog.RootFolder = CSIDL_DRIVES
             
             if initial_dir and os.path.exists(initial_dir):
                 dialog.SelectedPath = initial_dir
@@ -391,7 +450,7 @@ def browse_folder():
             if result == DialogResult.OK:
                 selected_path = dialog.SelectedPath
         except Exception as e:
-            print(f"Error con WinForms dialog: {e}")
+            logger.error(f"Error con WinForms dialog: {e}")
             selected_path = None
     
     # Metodo 3: SHBrowseForFolderW via ctypes
@@ -405,7 +464,7 @@ def browse_folder():
 
 
 def _browse_folder_ctypes(title, initial_dir):
-    """Abre el dialogo nativo de Windows usando IFileDialog (Vista+) o SHBrowseForFolderW.
+    """Abre el dialogo nativo de Windows usando SHBrowseForFolderW.
     Muestra unidades locales, mapeadas y de red."""
     try:
         from ctypes import wintypes
@@ -416,20 +475,10 @@ def _browse_folder_ctypes(title, initial_dir):
         # CoInitialize para COM
         ole32.CoInitialize(None)
         
-        # --- Intentar IFileDialog primero (Vista+, mucho mejor) ---
-        try:
-            result = _browse_ifiledialog(title, initial_dir)
-            if result:
-                return result
-        except Exception as e:
-            print(f"IFileDialog no disponible, usando fallback: {e}")
-        
-        # --- Fallback: SHBrowseForFolderW ---
         BIF_RETURNONLYFSDIRS = 0x00000001
         BIF_NEWDIALOGSTYLE = 0x00000040
         BIF_SHAREABLE = 0x00008000
         BIF_NONEWFOLDERBUTTON = 0x00000200
-        CSIDL_DRIVES = 0x0011
         
         class BROWSEINFO(ctypes.Structure):
             _fields_ = [
@@ -477,33 +526,12 @@ def _browse_folder_ctypes(title, initial_dir):
         return None
         
     except Exception as e:
-        print(f"Error con dialogo nativo: {e}")
+        logger.error(f"Error con dialogo nativo: {e}")
         return None
-
-
-def _browse_ifiledialog(title, initial_dir):
-    """Usa IFileDialog (Windows Vista+) para un dialogo moderno tipo Explorer.
-    Soporta unidades mapeadas, red, y tiene barra de direcciones."""
-    import comtypes
-    from comtypes.client import CreateObject
-    
-    # CLSID_FileOpenDialog = {DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7}
-    # Pero usamos FolderPickerDialog (Windows 8+) o FileOpenDialog con FOS_PICKFOLDERS
-    
-    try:
-        # Intentar Windows 8+ FolderPicker
-        picker = CreateObject("{DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7}", interface=comtypes.gen._00020430_0000_0000_C000_000000000046_0_2_0.IUnknown)
-        # No podemos usar FolderPicker facilmente sin las interfaces tipadas
-        # Vamos con el metodo mas robusto: subprocess con powershell
-        raise Exception("COM tipado no disponible, usar powershell")
-    except Exception:
-        raise
 
 
 def _browse_folder_powershell(title, initial_dir):
     """Ultimo recurso: usar Windows Forms via powershell para un dialogo completo."""
-    import subprocess
-    import tempfile
     
     ps_script = '''
 Add-Type -AssemblyName System.Windows.Forms
@@ -533,7 +561,7 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             return result.stdout.strip()
         return None
     except Exception as e:
-        print(f"Error con PowerShell dialog: {e}")
+        logger.error(f"Error con PowerShell dialog: {e}")
         return None
 
 
