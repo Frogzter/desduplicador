@@ -6,6 +6,7 @@ let groupSelections = {};
 // Cargar configuración al iniciar
 document.addEventListener('DOMContentLoaded', () => {
     loadConfig();
+    loadFilters();
     loadLastScan();
 });
 
@@ -45,8 +46,63 @@ function loadConfig() {
             if (config.review_path) {
                 document.getElementById('review-path').value = config.review_path;
             }
+            if (config.tamano_min_video !== undefined) {
+                document.getElementById('tamano-min-video').value = Math.round(config.tamano_min_video / (1024 * 1024));
+            }
         })
         .catch(err => console.error('Error cargando config:', err));
+}
+
+function loadFilters() {
+    fetch('/api/filters')
+        .then(r => r.json())
+        .then(data => {
+            renderFilters(data.categorias, data.filtros_activos);
+        })
+        .catch(err => console.error('Error cargando filtros:', err));
+}
+
+function renderFilters(categorias, filtrosActivos) {
+    const container = document.getElementById('filtros-grid');
+    if (!container) return;
+    
+    let html = '';
+    for (const [categoria, exts] of Object.entries(categorias)) {
+        const isActive = filtrosActivos.includes(categoria);
+        html += `
+            <div class="filtro-item ${isActive ? 'activo' : ''}" onclick="toggleFilter(this)">
+                <input type="checkbox" value="${categoria}" ${isActive ? 'checked' : ''} onclick="event.stopPropagation();">
+                <label>${capitalize(categoria)}</label>
+                <span class="filtro-count">${exts.length} ext</span>
+            </div>
+        `;
+    }
+    // Categoria "otros"
+    const otrosActive = filtrosActivos.includes('otros');
+    html += `
+        <div class="filtro-item ${otrosActive ? 'activo' : ''}" onclick="toggleFilter(this)">
+            <input type="checkbox" value="otros" ${otrosActive ? 'checked' : ''} onclick="event.stopPropagation();">
+            <label>Otros</label>
+            <span class="filtro-count">resto</span>
+        </div>
+    `;
+    
+    container.innerHTML = html;
+}
+
+function toggleFilter(item) {
+    const cb = item.querySelector('input[type="checkbox"]');
+    cb.checked = !cb.checked;
+    item.classList.toggle('activo', cb.checked);
+}
+
+function getActiveFilters() {
+    const checkboxes = document.querySelectorAll('#filtros-grid input[type="checkbox"]');
+    return Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+}
+
+function capitalize(str) {
+    return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
 function loadLastScan() {
@@ -201,15 +257,17 @@ function savePaths() {
     const paths = getPaths();
     const outputPath = document.getElementById('output-path').value.trim();
     const reviewPath = document.getElementById('review-path').value.trim();
+    const filtrosActivos = getActiveFilters();
+    const tamanoMinVideo = parseInt(document.getElementById('tamano-min-video').value || '1') * 1024 * 1024;
 
     fetch('/api/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paths, output_path: outputPath, review_path: reviewPath })
+        body: JSON.stringify({ paths, output_path: outputPath, review_path: reviewPath, filtros_activos: filtrosActivos, tamano_min_video: tamanoMinVideo })
     })
     .then(r => r.json())
-    .then(() => showToast('Rutas guardadas correctamente', 'success'))
-    .catch(err => showToast('Error guardando rutas: ' + err, 'error'));
+    .then(() => showToast('Configuracion guardada correctamente', 'success'))
+    .catch(err => showToast('Error guardando configuracion: ' + err, 'error'));
 }
 
 function startScan() {
@@ -219,14 +277,26 @@ function startScan() {
         return;
     }
 
-    document.getElementById('btn-scan').disabled = true;
-    document.getElementById('btn-stop').disabled = false;
-    document.getElementById('progress-section').style.display = 'block';
-    document.getElementById('progress-section').classList.add('activo');
-    document.getElementById('results-section').style.display = 'none';
-    
-    updateProgress(0, 100, 'Iniciando escaneo...');
-    socket.emit('start_scan', { paths });
+    // Guardar filtros antes de escanear
+    const filtrosActivos = getActiveFilters();
+    const tamanoMinVideo = parseInt(document.getElementById('tamano-min-video').value || '1') * 1024 * 1024;
+
+    fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths, filtros_activos: filtrosActivos, tamano_min_video: tamanoMinVideo })
+    })
+    .then(() => {
+        document.getElementById('btn-scan').disabled = true;
+        document.getElementById('btn-stop').disabled = false;
+        document.getElementById('progress-section').style.display = 'block';
+        document.getElementById('progress-section').classList.add('activo');
+        document.getElementById('results-section').style.display = 'none';
+        
+        updateProgress(0, 100, 'Iniciando escaneo...');
+        socket.emit('start_scan', { paths });
+    })
+    .catch(err => showToast('Error guardando filtros: ' + err, 'error'));
 }
 
 function stopScan() {

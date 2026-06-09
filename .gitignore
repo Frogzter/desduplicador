@@ -7,3 +7,6 @@ node_modules/
 .kimi/
 estado_*.json
 progreso_*.json
+venv/
+data/
+

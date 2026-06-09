@@ -674,3 +674,97 @@ section {
         align-items: flex-start;
     }
 }
+
+/* === FILTROS DE CATEGORIA === */
+.filtros-section {
+    background: #2d2d30;
+    border: 1px solid #3e3e42;
+    border-radius: 6px;
+    padding: 15px;
+    margin-top: 15px;
+}
+
+.filtros-section h4 {
+    color: #ce9178;
+    margin-top: 0;
+    margin-bottom: 12px;
+    font-size: 14px;
+}
+
+.filtros-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+}
+
+.filtro-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: #252526;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s;
+    border: 1px solid transparent;
+}
+
+.filtro-item:hover {
+    background: #3c3c3c;
+}
+
+.filtro-item.activo {
+    border-color: #4ec9b0;
+    background: #252526;
+}
+
+.filtro-item input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: #4ec9b0;
+}
+
+.filtro-item label {
+    cursor: pointer;
+    font-size: 13px;
+    flex: 1;
+    color: #d4d4d4;
+}
+
+.filtro-count {
+    font-size: 11px;
+    color: #808080;
+    font-family: monospace;
+}
+
+.tamano-video-config {
+    margin-top: 12px;
+    padding: 10px;
+    background: #252526;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.tamano-video-config label {
+    font-size: 12px;
+    color: #d4d4d4;
+}
+
+.tamano-video-config input {
+    width: 80px;
+    padding: 6px;
+    background: #3c3c3c;
+    border: 1px solid #3e3e42;
+    color: #d4d4d4;
+    border-radius: 4px;
+    text-align: center;
+    margin: 0;
+}
+
+.tamano-video-config span {
+    font-size: 12px;
+    color: #808080;
+}

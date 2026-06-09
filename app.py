@@ -30,11 +30,56 @@ DATA_DIR.mkdir(exist_ok=True)
 CONFIG_FILE = DATA_DIR / 'config.json'
 PROGRESS_FILE = DATA_DIR / 'progress.json'
 
+# === CATEGORIAS DE ARCHIVO ===
+EXTENSIONES = {
+    'musica': ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.wma', '.opus', '.aiff'],
+    'video': ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg', '.3gp'],
+    'documentos': ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.md', '.rtf', '.odt', '.ods', '.odp', '.csv'],
+    'ejecutables': ['.exe', '.msi', '.bat', '.cmd', '.ps1', '.sh', '.jar', '.app', '.dmg', '.deb', '.rpm'],
+    'imagenes': ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.tiff', '.tif', '.raw', '.cr2', '.nef'],
+    'comprimidos': ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.iso'],
+}
+
+# Tamaño mínimo para videos (en bytes) - 1MB por defecto
+TAMANO_MIN_VIDEO_DEFAULT = 1 * 1024 * 1024  # 1 MB
+
+
+def detectar_categoria(archivo_path):
+    """Detecta la categoría de un archivo por su extensión."""
+    ext = Path(archivo_path).suffix.lower()
+    for categoria, extensiones in EXTENSIONES.items():
+        if ext in extensiones:
+            return categoria
+    return 'otros'
+
+
+def archivo_pasa_filtro(archivo_path, filtros_activos, tamano):
+    """Verifica si un archivo pasa los filtros seleccionados."""
+    if not filtros_activos:
+        return True  # Sin filtros = todo pasa
+
+    categoria = detectar_categoria(archivo_path)
+
+    # Si la categoría no está en filtros activos, rechazar
+    if categoria not in filtros_activos:
+        return False
+
+    # Filtro especial para videos por tamaño
+    if categoria == 'video' and 'video' in filtros_activos:
+        tamano_min = load_config().get('tamano_min_video', TAMANO_MIN_VIDEO_DEFAULT)
+        if tamano < tamano_min:
+            return False
+
+    return True
+
+
 # Configuración por defecto
 default_config = {
     'paths': [],
     'output_path': '',
-    'review_path': ''
+    'review_path': '',
+    'filtros_activos': list(EXTENSIONES.keys()) + ['otros'],
+    'tamano_min_video': TAMANO_MIN_VIDEO_DEFAULT
 }
 
 def load_config():
@@ -91,8 +136,22 @@ def update_config():
         config['output_path'] = data['output_path']
     if 'review_path' in data:
         config['review_path'] = data['review_path']
+    if 'filtros_activos' in data:
+        config['filtros_activos'] = data['filtros_activos']
+    if 'tamano_min_video' in data:
+        config['tamano_min_video'] = data['tamano_min_video']
     save_config(config)
     return jsonify(config)
+
+@app.route('/api/filters', methods=['GET'])
+def get_filters():
+    """Devuelve las categorias disponibles y los filtros activos."""
+    config = load_config()
+    return jsonify({
+        'categorias': EXTENSIONES,
+        'filtros_activos': config.get('filtros_activos', list(EXTENSIONES.keys()) + ['otros']),
+        'tamano_min_video': config.get('tamano_min_video', TAMANO_MIN_VIDEO_DEFAULT)
+    })
 
 @app.route('/api/progress', methods=['GET'])
 def get_progress():
@@ -128,6 +187,10 @@ def handle_stop_scan():
 def scan_worker(paths):
     """Worker que escanea archivos y encuentra duplicados."""
     try:
+        # Cargar configuracion de filtros
+        config = load_config()
+        filtros_activos = config.get('filtros_activos', list(EXTENSIONES.keys()) + ['otros'])
+        
         # Primero: recopilar todos los archivos
         all_files = []
         for path in paths:
@@ -145,13 +208,24 @@ def scan_worker(paths):
                     for filename in files:
                         all_files.append(Path(root) / filename)
         
-        total = len(all_files)
+        # Aplicar filtros por categoria
+        archivos_filtrados = []
+        for filepath in all_files:
+            try:
+                tamano = filepath.stat().st_size
+                if archivo_pasa_filtro(str(filepath), filtros_activos, tamano):
+                    archivos_filtrados.append(filepath)
+            except Exception:
+                pass  # Si no podemos leer el archivo, lo saltamos
+        
+        total = len(archivos_filtrados)
+        filtrados_count = len(all_files) - total
         save_progress({'status': 'scanning', 'current': 0, 'total': total, 'message': f'Escaneando {total} archivos...'})
-        socketio.emit('scan_progress', {'current': 0, 'total': total, 'message': f'Escaneando {total} archivos...'})
+        socketio.emit('scan_progress', {'current': 0, 'total': total, 'message': f'Escaneando {total} archivos ({filtrados_count} filtrados)...'})
         
         # Segundo: calcular hashes
         hashes = {}
-        for i, filepath in enumerate(all_files):
+        for i, filepath in enumerate(archivos_filtrados):
             if scan_stop_event.is_set():
                 save_progress({'status': 'idle', 'current': 0, 'total': 0, 'message': 'Escaneo cancelado'})
                 socketio.emit('scan_stopped', {})

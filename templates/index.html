@@ -48,6 +48,19 @@
                 </div>
             </div>
 
+            <div class="filtros-section">
+                <h4>🔎 Filtros de categoría</h4>
+                <div class="filtros-grid" id="filtros-grid"></div>
+                <div class="tamano-video-config">
+                    <label>Vídeo mínimo:</label>
+                    <input type="number" id="tamano-min-video" value="1" min="0" step="1">
+                    <span>MB (vídeos más pequeños se ignoran)</span>
+                </div>
+                <p style="font-size:11px; color:#808080; margin:8px 0 0 0;">
+                    Desactiva categorías que no quieras escanear. Los filtros se guardan entre sesiones.
+                </p>
+            </div>
+
             <div class="actions-row">
                 <button class="btn-escanear" id="btn-scan" onclick="startScan()">🔎 Iniciar Escaneo</button>
                 <button class="btn-cancelar" id="btn-stop" onclick="stopScan()" disabled>⏹ Detener</button>
