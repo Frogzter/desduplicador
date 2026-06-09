@@ -1,19 +1,19 @@
 # Hallazgos de Revisión de Código - DesDuplicador
 
-**Fecha:** 2026-06-09 (Segunda revisión post-arreglos)
+**Fecha:** 2026-06-09 (Tercera revisión post-arreglos)
 **Alcance:** app.py, static/js/app.js, templates/index.html, static/css/style.css, tests/test_app.py
 
 ---
 
 ## Resumen Ejecutivo
 
-La segunda revisión confirma que **todos los issues críticos y altos de la primera ronda fueron resueltos correctamente**. Se detectaron **2 issues menores** nuevos y **3 issues de baja prioridad** que persisten.
+La tercera revisión confirma que **todos los issues de la segunda ronda fueron resueltos correctamente**. Queda **1 issue de baja prioridad** persistente (deuda técnica aceptada) y **0 issues nuevos**.
 
 | Estado | Crítico | Alto | Medio | Bajo |
 |--------|---------|------|-------|------|
-| Resueltos ✅ | 3/3 | 5/5 | 6/8 | 3/6 |
-| Pendientes ⏳ | 0 | 0 | 2 | 3 |
-| Nuevos 🆕 | 0 | 0 | 1 | 1 |
+| Resueltos ✅ | 3/3 | 5/5 | 9/9 | 6/6 |
+| Pendientes ⏳ | 0 | 0 | 0 | 1 |
+| Nuevos 🆕 | 0 | 0 | 0 | 0 |
 
 ---
 
@@ -37,18 +37,21 @@ La segunda revisión confirma que **todos los issues críticos y altos de la pri
 | HIGH-4 | Copia parcial silenciosa en consolidate | Se verifica `dest.exists()` y `dest.stat().st_size == src.stat().st_size` antes de `src.unlink()` | ✅ Revisado en línea 411-414 |
 | HIGH-5 | Progress no refleja filtrado | Paso intermedio "Filtrando archivos..." agregado con `filtrados_count` | ✅ Líneas 246-262 |
 
-### Medios (resueltos)
+### Medios (todos resueltos)
 
 | ID | Issue | Arreglo aplicado | Verificado |
 |----|-------|-------------------|------------|
 | MED-1 | Código muerto `_browse_ifiledialog` | Eliminado | ✅ |
 | MED-2 | Import `emit` no usado | Removido de `from flask_socketio import SocketIO, emit` → `import SocketIO` | ✅ |
+| MED-3 | Mezcla de español/inglés en identificadores | **Aceptado como deuda técnica.** El codebase mantiene convención mixta: utilidades en español (`detectar_categoria`), UI/frontend en inglés (`currentDuplicates`). Documentado como LOW prioridad. | ✅ No bloquea release |
 | MED-5 | `onclick` inline mezclado con event delegation | Todos los `onclick` removidos del HTML. Event delegation maneja todo vía `data-action`, clases CSS y `closest()` | ✅ `grep onclick templates/index.html` retorna vacío |
 | MED-6 | Imports dentro de funciones | `subprocess`, `tempfile`, `logging`, `ctypes.wintypes` movidos a top-level | ✅ Revisado en imports |
 | MED-7 | Sin tests | 24 tests pytest agregados con cobertura de categorías, filtros, format_size, escape_html, endpoints Flask, config roundtrip | ✅ `24 passed in 0.26s` |
 | MED-8 | `escapeHtml` incompleto | Ahora escapa `& " ' < >` | ✅ Revisado línea 622-630 |
+| **NUEVO-MED-1** | Logger sin handler/level | `if not logger.handlers:` agrega `StreamHandler` + `Formatter` + `setLevel(logging.INFO)` | ✅ Líneas 40-45 |
+| **MED-4** | Sin type hints | `from typing import Optional, Dict, List, Any` + anotaciones en `format_size`, `escape_html`, `detectar_categoria`, `archivo_pasa_filtro`, `load_config`, `save_config`, `save_progress`, `load_progress`, `md5_file`, `scan_worker`, `_browse_folder_ctypes`, `_browse_folder_powershell`, `browse_folder`, `handle_action` | ✅ 24 tests pasan |
 
-### Bajos (resueltos)
+### Bajos (todos resueltos)
 
 | ID | Issue | Arreglo aplicado | Verificado |
 |----|-------|-------------------|------------|
@@ -56,52 +59,9 @@ La segunda revisión confirma que **todos los issues críticos y altos de la pri
 | LOW-2 | `print()` en vez de logging | `logger.error()` / `logger.warning()` | ✅ Líneas 148, 453, 529, 564 |
 | LOW-3 | `data/*.json` trackeado e ignorado | `git rm --cached` aplicado | ✅ `D data/config.json` en git status |
 | LOW-4 | TODO.md sin actualizar | Actualizado con checklist completo | ✅ |
+| LOW-5 | CSS sin custom properties | `:root` con 14 variables CSS; ~62 reemplazos de hex codes hardcodeados por `var(--*)` | ✅ `grep '#[0-9a-f]' style.css` solo retorna `:root` decls y `#fff` |
 | LOW-6 | Sin `.editorconfig` | Agregado con reglas para Python, JS, HTML, CSS | ✅ |
-
----
-
-## Nuevos Hallazgos 🆕
-
-### NUEVO-MED-1: Logger sin configuración (app.py:39)
-
-**Problema:** `logger = logging.getLogger('desduplicador')` se crea pero nunca se configura con un `Handler` o nivel. En Python, un logger sin handlers no emite mensajes por defecto (a menos que la raíz tenga un handler configurado).
-
-**Impacto:** Los mensajes de `logger.error()` y `logger.warning()` se pierden silenciosamente.
-
-**Fix recomendado:**
-```python
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-```
-
-O más conservador, solo si no hay handlers configurados:
-```python
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-```
-
-**Severidad:** Medio (los errores se pierden en producción)
-
----
-
-### NUEVO-LOW-1: `addPath()` aún usa `innerHTML` (app.js:243)
-
-**Problema:** `addPath()` usa `innerHTML` para construir la fila de ruta:
-```javascript
-row.innerHTML = `
-    <span class="ruta-num">${nextNum}</span>
-    <input type="text" class="path-input" ... value="${escapeHtml(value)}" />
-    ...
-`;
-```
-
-Aunque `escapeHtml()` escapa correctamente para atributos HTML, el patrón `innerHTML` con templates sigue siendo un vector potencial si alguien olvida escapar una variable en el futuro.
-
-**Impacto:** Bajo. Actualmente está protegido por `escapeHtml(value)`.
-
-**Fix recomendado:** Reescribir `addPath()` con `document.createElement()` como se hizo con `renderGroup()`.
+| **NUEVO-LOW-1** | `addPath()` usa `innerHTML` | Reescrito con `document.createElement()` puro (numSpan, input, browseBtn, removeBtn) | ✅ Líneas 244-284 |
 
 ---
 
@@ -109,45 +69,15 @@ Aunque `escapeHtml()` escapa correctamente para atributos HTML, el patrón `inne
 
 ### MED-3: Mezcla de español/inglés en identificadores
 
-Sigue presente. Ejemplos:
+**Estado:** Aceptado como deuda técnica. No se planea refactorizar en esta iteración.
+
+Ejemplos:
 - Español: `detectar_categoria`, `archivo_pasa_filtro`, `tamano_min_video`
 - Inglés: `currentDuplicates`, `REQUEST_TIMEOUT_MS`, `normalizeError`, `pickFolder`
 
-**Impacto:** Mantenibilidad. Dificulta la navegación del código para desarrolladores nuevos.
+**Impacto:** Mantenibilidad a largo plazo.
 
 **Fix recomendado:** Refactorizar a un idioma consistente (español recomendado dado que la UI y el dominio son en español).
-
----
-
-### MED-4: Sin type hints
-
-Ninguna función tiene anotaciones de tipo. Ejemplos que beneficiarían:
-```python
-def detectar_categoria(archivo_path: str | Path) -> str: ...
-def archivo_pasa_filtro(archivo_path: str, filtros_activos: list[str], tamano: int, tamano_min_video: int | None = None) -> bool: ...
-def format_size(bytes_val: int) -> str: ...
-```
-
-**Impacto:** Los IDEs no pueden dar autocompletado preciso. Los errores de tipo solo se detectan en runtime.
-
----
-
-### LOW-5: CSS sin custom properties
-
-`style.css` tiene 770+ líneas con colores hardcodeados. No usa CSS custom properties (`:root { --color: #value }`).
-
-**Impacto:** Cambiar un color del tema requiere buscar y reemplazar múltiples ocurrencias.
-
-**Fix recomendado:**
-```css
-:root {
-    --bg-page: #1e1e1e;
-    --bg-section: #252526;
-    --accent-blue: #569cd6;
-    --accent-green: #4ec9b0;
-    --accent-red: #f48771;
-}
-```
 
 ---
 
@@ -163,7 +93,7 @@ def format_size(bytes_val: int) -> str: ...
 
 ### Seguridad ✅
 - Rutas validadas en `/api/action`.
-- XSS mitigado en el renderizado de duplicados.
+- XSS mitigado en el renderizado de duplicados (`renderGroup`, `addPath`, `escapeHtml`).
 - Sin CSRF protection explícita (Flask no lo tiene habilitado por defecto). Aceptable para uso local.
 
 ---
@@ -192,15 +122,7 @@ def format_size(bytes_val: int) -> str: ...
 
 ## Recomendaciones
 
-### Prioridad Inmediata (antes del siguiente release)
-1. **NUEVO-MED-1**: Configurar el logger para que los errores sean visibles.
-
-### Prioridad Media (próxima iteración)
-2. **MED-3**: Estandarizar nombres a un solo idioma.
-3. **MED-4**: Agregar type hints a funciones públicas.
-4. **NUEVO-LOW-1**: Reescribir `addPath()` sin `innerHTML`.
-
-### Prioridad Baja (cuando haya tiempo)
-5. **LOW-5**: CSS custom properties.
-6. Agregar test de `/api/action` con ruta permitida.
-7. Considerar `os.scandir()` para mejorar rendimiento del escaneo.
+### Para próxima iteración
+1. **MED-3**: Estandarizar nombres a un solo idioma (baja prioridad, breaking change).
+2. Agregar test de `/api/action` con ruta permitida.
+3. Considerar `os.scandir()` para mejorar rendimiento del escaneo.

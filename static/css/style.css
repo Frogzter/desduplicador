@@ -18,6 +18,8 @@
     --accent-orange: #ce9178;
     --accent-purple: #c586c0;
     --accent-sky: #9cdcfe;
+    --bg-input-hover: #4e4e4e;
+    --text-inverse: #000;
 }
 
 /* ---- Reset y Base ---- */
@@ -178,21 +180,21 @@ section {
 
 .btn-icon:hover,
 .btn-remove:hover {
-    background: #4e4e4e;
+    background: var(--bg-input-hover);
     opacity: 1;
 }
 
 .btn-add {
-    background: #4ec9b0;
-    color: #000;
+    background: var(--accent-green);
+    color: var(--text-inverse);
     padding: 8px 16px;
     font-size: 13px;
     margin-top: 8px;
 }
 
 .btn-browse {
-    background: #dcdcaa;
-    color: #000;
+    background: var(--accent-yellow);
+    color: var(--text-inverse);
     padding: 8px 16px;
     font-size: 13px;
     margin-top: 8px;
@@ -201,7 +203,7 @@ section {
 
 .btn-guardar,
 .btn-primary {
-    background: #569cd6;
+    background: var(--accent-blue);
     color: #fff;
     padding: 12px 24px;
     font-size: 14px;
@@ -210,8 +212,8 @@ section {
 
 .btn-cancelar,
 .btn-secondary {
-    background: #f48771;
-    color: #000;
+    background: var(--accent-red);
+    color: var(--text-inverse);
     padding: 12px 24px;
     font-size: 14px;
     margin-top: 12px;
@@ -219,32 +221,32 @@ section {
 }
 
 .btn-escanear {
-    background: #569cd6;
+    background: var(--accent-blue);
     color: #fff;
     padding: 12px 24px;
     font-size: 14px;
 }
 
 .btn-mantener {
-    background: #4ec9b0;
-    color: #000;
+    background: var(--accent-green);
+    color: var(--text-inverse);
 }
 
 .btn-eliminar {
-    background: #f48771;
-    color: #000;
+    background: var(--accent-red);
+    color: var(--text-inverse);
 }
 
 .btn-mover {
-    background: #dcdcaa;
-    color: #000;
+    background: var(--accent-yellow);
+    color: var(--text-inverse);
 }
 
 /* ---- Destino Config ---- */
 .destino-config,
 .output-paths {
-    background: #2d2d30;
-    border: 1px solid #3e3e42;
+    background: var(--bg-item);
+    border: 1px solid var(--border);
     border-radius: 6px;
     padding: 15px;
     margin-top: 15px;
@@ -252,7 +254,7 @@ section {
 
 .destino-config h4,
 .output-paths label {
-    color: #ce9178;
+    color: var(--accent-orange);
     margin-top: 0;
     margin-bottom: 10px;
     font-size: 14px;
@@ -274,7 +276,7 @@ section {
     gap: 10px;
     margin: 10px 0;
     padding: 10px;
-    background: #252526;
+    background: var(--bg-section);
     border-radius: 4px;
     cursor: pointer;
 }
@@ -291,12 +293,12 @@ section {
 }
 
 .modo-activo {
-    border: 1px solid #4ec9b0;
+    border: 1px solid var(--accent-green);
 }
 
 .modo-descripcion {
     font-size: 11px;
-    color: #808080;
+    color: var(--text-secondary);
     margin-left: 28px;
 }
 
@@ -312,8 +314,8 @@ section {
 .progreso-container,
 .progress-section {
     display: none;
-    background: #252526;
-    border: 1px solid #3e3e42;
+    background: var(--bg-section);
+    border: 1px solid var(--border);
     border-radius: 6px;
     padding: 15px;
     margin: 15px 0;
@@ -334,18 +336,18 @@ section {
 
 .progreso-mensaje,
 #progress-message {
-    color: #d4d4d4;
+    color: var(--text-primary);
 }
 
 .progreso-pct,
 #progress-percent {
-    color: #569cd6;
+    color: var(--accent-blue);
     font-weight: bold;
 }
 
 .progreso-barra-bg,
 .progress-bar {
-    background: #3c3c3c;
+    background: var(--bg-input);
     border-radius: 4px;
     height: 24px;
     overflow: hidden;
@@ -353,7 +355,7 @@ section {
 
 .progreso-barra-fill,
 .progress-fill {
-    background: linear-gradient(90deg, #569cd6, #4ec9b0);
+    background: linear-gradient(90deg, var(--accent-blue), var(--accent-green));
     height: 100%;
     width: 0%;
     border-radius: 4px;
@@ -363,14 +365,14 @@ section {
     justify-content: flex-end;
     padding-right: 8px;
     font-size: 11px;
-    color: #000;
+    color: var(--text-inverse);
     font-weight: bold;
 }
 
 .progreso-ruta {
     margin-top: 8px;
     font-size: 11px;
-    color: #808080;
+    color: var(--text-secondary);
     font-family: monospace;
     white-space: nowrap;
     overflow: hidden;
@@ -387,7 +389,7 @@ section {
 
 .stat-box,
 .stat-item {
-    background: #252526;
+    background: var(--bg-section);
     padding: 15px;
     border-radius: 6px;
     min-width: 150px;
@@ -399,19 +401,19 @@ section {
 .stat-value {
     font-size: 24px;
     font-weight: bold;
-    color: #569cd6;
+    color: var(--accent-blue);
 }
 
 .stat-label {
     font-size: 12px;
-    color: #808080;
+    color: var(--text-secondary);
 }
 
 /* ---- Grupos de Duplicados ---- */
 .grupo,
 .duplicate-group {
-    background: #252526;
-    border: 1px solid #3e3e42;
+    background: var(--bg-section);
+    border: 1px solid var(--border);
     margin: 15px 0;
     padding: 15px;
     border-radius: 6px;
@@ -429,7 +431,7 @@ section {
 
 .grupo-header h3,
 .group-header h3 {
-    color: #569cd6;
+    color: var(--accent-blue);
     font-size: 13px;
     font-family: monospace;
     word-break: break-all;
@@ -437,7 +439,7 @@ section {
 
 .hash {
     font-family: monospace;
-    color: #ce9178;
+    color: var(--accent-orange);
     font-size: 12px;
 }
 
@@ -445,12 +447,12 @@ section {
     display: flex;
     gap: 20px;
     font-size: 12px;
-    color: #808080;
+    color: var(--text-secondary);
 }
 
 .group-info span,
 .group-info div {
-    color: #d4d4d4;
+    color: var(--text-primary);
 }
 
 /* ---- Archivos ---- */
@@ -461,7 +463,7 @@ section {
     align-items: center;
     padding: 8px;
     margin: 4px 0;
-    background: #2d2d30;
+    background: var(--bg-item);
     border-radius: 4px;
     gap: 12px;
 }
@@ -474,14 +476,14 @@ section {
 
 .ruta,
 .file-path {
-    color: #9cdcfe;
+    color: var(--accent-sky);
     font-size: 13px;
     word-break: break-all;
 }
 
 .meta,
 .file-meta {
-    color: #808080;
+    color: var(--text-secondary);
     font-size: 11px;
     margin-top: 4px;
 }
@@ -496,15 +498,15 @@ section {
 
 /* ---- Acciones en Grupo (Bulk) ---- */
 .bulk-actions {
-    background: #2d2d30;
-    border: 1px solid #3e3e42;
+    background: var(--bg-item);
+    border: 1px solid var(--border);
     border-radius: 6px;
     padding: 15px;
     margin: 15px 0;
 }
 
 .bulk-actions h3 {
-    color: #ce9178;
+    color: var(--accent-orange);
     margin-bottom: 12px;
     font-size: 14px;
 }
@@ -516,26 +518,26 @@ section {
 }
 
 .btn-bulk {
-    background: #3c3c3c;
-    color: #d4d4d4;
-    border: 1px solid #3e3e42;
+    background: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
     padding: 8px 14px;
     font-size: 12px;
 }
 
 .btn-bulk:hover {
-    background: #4e4e4e;
+    background: var(--bg-input-hover);
     opacity: 1;
 }
 
 .btn-bulk.btn-danger {
-    border-color: #f48771;
-    color: #f48771;
+    border-color: var(--accent-red);
+    color: var(--accent-red);
 }
 
 .btn-bulk.btn-danger:hover {
-    background: #f48771;
-    color: #000;
+    background: var(--accent-red);
+    color: var(--text-inverse);
 }
 
 /* ---- Estados ---- */
@@ -547,22 +549,22 @@ section {
 }
 
 .estado-mantener {
-    background: #4ec9b0;
-    color: #000;
+    background: var(--accent-green);
+    color: var(--text-inverse);
 }
 
 .estado-eliminar {
-    background: #f48771;
-    color: #000;
+    background: var(--accent-red);
+    color: var(--text-inverse);
 }
 
 .estado-mover {
-    background: #dcdcaa;
-    color: #000;
+    background: var(--accent-yellow);
+    color: var(--text-inverse);
 }
 
 .estado-consolidar {
-    background: #569cd6;
+    background: var(--accent-blue);
     color: #fff;
 }
 
@@ -592,34 +594,34 @@ section {
 
 .flash.success,
 .toast.success {
-    background: #4ec9b0;
-    color: #000;
+    background: var(--accent-green);
+    color: var(--text-inverse);
 }
 
 .flash.error,
 .toast.error {
-    background: #f48771;
-    color: #000;
+    background: var(--accent-red);
+    color: var(--text-inverse);
 }
 
 .flash.info,
 .toast.info {
-    background: #569cd6;
+    background: var(--accent-blue);
     color: #fff;
 }
 
 /* ---- Info Box ---- */
 .info-box {
-    background: #252526;
+    background: var(--bg-section);
     padding: 15px;
     border-radius: 6px;
     margin: 15px 0;
-    border-left: 4px solid #569cd6;
+    border-left: 4px solid var(--accent-blue);
 }
 
 /* ---- Ejecutar ---- */
 .ejecutar {
-    background: #c586c0;
+    background: var(--accent-purple);
     color: #fff;
     padding: 15px 30px;
     font-size: 16px;
@@ -630,17 +632,17 @@ section {
 .empty-state {
     text-align: center;
     padding: 50px;
-    color: #808080;
+    color: var(--text-secondary);
 }
 
 .empty-state h3 {
-    color: #569cd6;
+    color: var(--accent-blue);
     margin-bottom: 10px;
 }
 
 /* ---- Ruta Vacía ---- */
 .ruta-vacia {
-    color: #808080;
+    color: var(--text-secondary);
     font-style: italic;
     padding: 10px;
     text-align: center;
@@ -694,15 +696,15 @@ section {
 
 /* === FILTROS DE CATEGORIA === */
 .filtros-section {
-    background: #2d2d30;
-    border: 1px solid #3e3e42;
+    background: var(--bg-item);
+    border: 1px solid var(--border);
     border-radius: 6px;
     padding: 15px;
     margin-top: 15px;
 }
 
 .filtros-section h4 {
-    color: #ce9178;
+    color: var(--accent-orange);
     margin-top: 0;
     margin-bottom: 12px;
     font-size: 14px;
@@ -719,7 +721,7 @@ section {
     align-items: center;
     gap: 8px;
     padding: 8px 12px;
-    background: #252526;
+    background: var(--bg-section);
     border-radius: 4px;
     cursor: pointer;
     transition: background 0.2s;
@@ -727,38 +729,38 @@ section {
 }
 
 .filtro-item:hover {
-    background: #3c3c3c;
+    background: var(--bg-input);
 }
 
 .filtro-item.activo {
-    border-color: #4ec9b0;
-    background: #252526;
+    border-color: var(--accent-green);
+    background: var(--bg-section);
 }
 
 .filtro-item input[type="checkbox"] {
     width: 16px;
     height: 16px;
     cursor: pointer;
-    accent-color: #4ec9b0;
+    accent-color: var(--accent-green);
 }
 
 .filtro-item label {
     cursor: pointer;
     font-size: 13px;
     flex: 1;
-    color: #d4d4d4;
+    color: var(--text-primary);
 }
 
 .filtro-count {
     font-size: 11px;
-    color: #808080;
+    color: var(--text-secondary);
     font-family: monospace;
 }
 
 .tamano-video-config {
     margin-top: 12px;
     padding: 10px;
-    background: #252526;
+    background: var(--bg-section);
     border-radius: 4px;
     display: flex;
     align-items: center;
@@ -767,15 +769,15 @@ section {
 
 .tamano-video-config label {
     font-size: 12px;
-    color: #d4d4d4;
+    color: var(--text-primary);
 }
 
 .tamano-video-config input {
     width: 80px;
     padding: 6px;
-    background: #3c3c3c;
-    border: 1px solid #3e3e42;
-    color: #d4d4d4;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
     border-radius: 4px;
     text-align: center;
     margin: 0;
@@ -783,5 +785,5 @@ section {
 
 .tamano-video-config span {
     font-size: 12px;
-    color: #808080;
+    color: var(--text-secondary);
 }

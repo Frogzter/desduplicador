@@ -10,7 +10,8 @@ import logging
 import subprocess
 import tempfile
 from pathlib import Path
-from flask import Flask, render_template, jsonify, request
+from typing import Optional, Dict, List, Any
+from flask import Flask, render_template, jsonify, request, Response
 from flask_socketio import SocketIO
 
 # Windows COM imports for folder dialog
@@ -58,7 +59,7 @@ EXTENSIONES = {
 TAMANO_MIN_VIDEO_DEFAULT = 1 * 1024 * 1024  # 1 MB
 
 
-def format_size(bytes_val):
+def format_size(bytes_val: int) -> str:
     """Formatea un tamaño en bytes a una cadena legible."""
     if bytes_val == 0:
         return '0 B'
@@ -73,12 +74,12 @@ def format_size(bytes_val):
     return f"{s} {sizes[i]}"
 
 
-def escape_html(text):
+def escape_html(text: str) -> str:
     """Escapa caracteres HTML especiales."""
     return html.escape(str(text))
 
 
-def detectar_categoria(archivo_path):
+def detectar_categoria(archivo_path: str) -> str:
     """Detecta la categoría de un archivo por su extensión."""
     ext = Path(archivo_path).suffix.lower()
     for categoria, extensiones in EXTENSIONES.items():
@@ -87,7 +88,7 @@ def detectar_categoria(archivo_path):
     return 'otros'
 
 
-def archivo_pasa_filtro(archivo_path, filtros_activos, tamano, tamano_min_video=None):
+def archivo_pasa_filtro(archivo_path: str, filtros_activos: List[str], tamano: int, tamano_min_video: Optional[int] = None) -> bool:
     """Verifica si un archivo pasa los filtros seleccionados."""
     if not filtros_activos:
         return True  # Sin filtros = todo pasa
@@ -117,31 +118,31 @@ default_config = {
     'tamano_min_video': TAMANO_MIN_VIDEO_DEFAULT
 }
 
-def load_config():
+def load_config() -> Dict[str, Any]:
     with config_lock:
         if CONFIG_FILE.exists():
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
         return default_config.copy()
 
-def save_config(config):
+def save_config(config: Dict[str, Any]) -> None:
     with config_lock:
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
 
-def save_progress(progress):
+def save_progress(progress: Dict[str, Any]) -> None:
     with config_lock:
         with open(PROGRESS_FILE, 'w', encoding='utf-8') as f:
             json.dump(progress, f, ensure_ascii=False, indent=2)
 
-def load_progress():
+def load_progress() -> Dict[str, Any]:
     with config_lock:
         if PROGRESS_FILE.exists():
             with open(PROGRESS_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
         return {'status': 'idle', 'current': 0, 'total': 0, 'message': ''}
 
-def md5_file(filepath, chunk_size=8192):
+def md5_file(filepath: str, chunk_size: int = 8192) -> Optional[str]:
     """Calcula el hash MD5 de un archivo."""
     hasher = hashlib.md5()
     try:
@@ -223,7 +224,7 @@ def handle_stop_scan():
     scan_stop_event.set()
     socketio.emit('scan_stopped', {})
 
-def scan_worker(paths):
+def scan_worker(paths: List[str]) -> None:
     """Worker que escanea archivos y encuentra duplicados."""
     try:
         # Cargar configuracion de filtros
@@ -325,7 +326,7 @@ def get_last_scan():
     return jsonify([])
 
 @app.route('/api/action', methods=['POST'])
-def handle_action():
+def handle_action() -> Response:
     data = request.get_json()
     action = data.get('action')
     files = data.get('files', [])
@@ -428,7 +429,7 @@ def handle_action():
     return jsonify({'success': True, 'results': results})
 
 @app.route('/api/browse_folder', methods=['POST'])
-def browse_folder():
+def browse_folder() -> Response:
     """Abre el dialogo nativo de Windows para seleccionar carpetas locales o de red."""
     data = request.get_json() or {}
     title = data.get('title', 'Seleccionar carpeta')
@@ -468,7 +469,7 @@ def browse_folder():
         return jsonify({'success': False, 'message': 'No se selecciono ninguna carpeta'})
 
 
-def _browse_folder_ctypes(title, initial_dir):
+def _browse_folder_ctypes(title: str, initial_dir: str) -> Optional[str]:
     """Abre el dialogo nativo de Windows usando SHBrowseForFolderW.
     Muestra unidades locales, mapeadas y de red."""
     try:
@@ -535,7 +536,7 @@ def _browse_folder_ctypes(title, initial_dir):
         return None
 
 
-def _browse_folder_powershell(title, initial_dir):
+def _browse_folder_powershell(title: str, initial_dir: str) -> Optional[str]:
     """Ultimo recurso: usar Windows Forms via powershell para un dialogo completo."""
     
     ps_script = '''
