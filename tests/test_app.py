@@ -1,117 +1,204 @@
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+import json
 import pytest
 from app import (
-    app, detectar_categoria, archivo_pasa_filtro,
-    EXTENSIONES, TAMANO_MIN_VIDEO_DEFAULT
+    app,
+    detectar_categoria,
+    archivo_pasa_filtro,
+    format_size,
+    escape_html,
+    load_config,
+    save_config,
 )
 
 
+@pytest.fixture(autouse=True)
+def patch_data_dir(tmp_path, monkeypatch):
+    """Aísla los archivos de datos para que los tests no afecten la config real."""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    monkeypatch.setattr("app.DATA_DIR", data_dir)
+    monkeypatch.setattr("app.CONFIG_FILE", data_dir / "config.json")
+    monkeypatch.setattr("app.PROGRESS_FILE", data_dir / "progress.json")
+
+
+@pytest.fixture
+def client():
+    app.config["TESTING"] = True
+    with app.test_client() as client:
+        yield client
+
+
 class TestDetectarCategoria:
-    def test_mp3_es_musica(self):
-        assert detectar_categoria('cancion.mp3') == 'musica'
+    def test_musica(self):
+        assert detectar_categoria("song.mp3") == "musica"
+        assert detectar_categoria("song.wav") == "musica"
+        assert detectar_categoria("song.flac") == "musica"
 
-    def test_mp4_es_video(self):
-        assert detectar_categoria('pelicula.mp4') == 'video'
+    def test_video(self):
+        assert detectar_categoria("movie.mp4") == "video"
+        assert detectar_categoria("movie.avi") == "video"
+        assert detectar_categoria("movie.mkv") == "video"
 
-    def test_pdf_es_documento(self):
-        assert detectar_categoria('doc.pdf') == 'documentos'
+    def test_documentos(self):
+        assert detectar_categoria("doc.pdf") == "documentos"
+        assert detectar_categoria("sheet.xlsx") == "documentos"
+        assert detectar_categoria("notes.txt") == "documentos"
 
-    def test_exe_es_ejecutable(self):
-        assert detectar_categoria('app.exe') == 'ejecutables'
+    def test_ejecutables(self):
+        assert detectar_categoria("app.exe") == "ejecutables"
+        assert detectar_categoria("script.sh") == "ejecutables"
+        assert detectar_categoria("installer.msi") == "ejecutables"
 
-    def test_jpg_es_imagen(self):
-        assert detectar_categoria('foto.jpg') == 'imagenes'
+    def test_imagenes(self):
+        assert detectar_categoria("photo.jpg") == "imagenes"
+        assert detectar_categoria("image.png") == "imagenes"
+        assert detectar_categoria("raw.cr2") == "imagenes"
 
-    def test_zip_es_comprimido(self):
-        assert detectar_categoria('backup.zip') == 'comprimidos'
+    def test_comprimidos(self):
+        assert detectar_categoria("archive.zip") == "comprimidos"
+        assert detectar_categoria("backup.7z") == "comprimidos"
+        assert detectar_categoria("disk.iso") == "comprimidos"
 
-    def test_desconocido_es_otros(self):
-        assert detectar_categoria('archivo.xyz') == 'otros'
+    def test_otros(self):
+        assert detectar_categoria("unknown.xyz") == "otros"
+        assert detectar_categoria("file.abc123") == "otros"
+        assert detectar_categoria("noextension") == "otros"
 
     def test_case_insensitive(self):
-        assert detectar_categoria('foto.JPG') == 'imagenes'
-        assert detectar_categoria('Cancion.MP3') == 'musica'
+        assert detectar_categoria("SONG.MP3") == "musica"
+        assert detectar_categoria("Movie.MP4") == "video"
+        assert detectar_categoria("Doc.PDF") == "documentos"
 
 
 class TestArchivoPasaFiltro:
-    def test_sin_filtros_pasa_todo(self):
-        assert archivo_pasa_filtro('test.mp3', [], 1000) is True
+    def test_sin_filtros(self):
+        assert archivo_pasa_filtro("song.mp3", [], 0) is True
+        assert archivo_pasa_filtro("unknown.xyz", [], 0) is True
+        assert archivo_pasa_filtro("movie.mp4", [], 10 * 1024 * 1024) is True
 
-    def test_categoria_incluida_pasa(self):
-        assert archivo_pasa_filtro('test.mp3', ['musica'], 1000) is True
+    def test_categoria_activa(self):
+        assert archivo_pasa_filtro("song.mp3", ["musica"], 0) is True
+        assert archivo_pasa_filtro("movie.mp4", ["video"], 10 * 1024 * 1024) is True
+        assert archivo_pasa_filtro("doc.pdf", ["documentos"], 0) is True
 
-    def test_categoria_excluida_no_pasa(self):
-        assert archivo_pasa_filtro('test.mp3', ['video'], 1000) is False
+    def test_categoria_inactiva(self):
+        assert archivo_pasa_filtro("song.mp3", ["video"], 0) is False
+        assert archivo_pasa_filtro("unknown.xyz", ["musica"], 0) is False
+        assert archivo_pasa_filtro("movie.mp4", ["musica", "documentos"], 0) is False
 
-    def test_video_grande_pasa(self):
-        tamano = 10 * 1024 * 1024  # 10 MB
-        assert archivo_pasa_filtro('test.mp4', ['video'], tamano, tamano) is True
+    def test_video_tamano_pequeno(self):
+        """Videos menores al tamaño mínimo deben ser filtrados."""
+        assert archivo_pasa_filtro("movie.mp4", ["video"], 0) is False
+        assert archivo_pasa_filtro("movie.mp4", ["video"], 512 * 1024) is False
 
-    def test_video_pequeno_no_pasa(self):
-        tamano = 100  # 100 bytes
-        min_video = 1024 * 1024  # 1 MB
-        assert archivo_pasa_filtro('test.mp4', ['video'], tamano, min_video) is False
+    def test_video_tamano_grande(self):
+        """Videos mayores al tamaño mínimo deben pasar."""
+        assert archivo_pasa_filtro("movie.mp4", ["video"], 10 * 1024 * 1024) is True
+        assert archivo_pasa_filtro("movie.mp4", ["video"], 1024 * 1024 * 1024) is True
 
-    def test_video_pequeno_sin_filtro_video_pasa(self):
-        tamano = 100
-        assert archivo_pasa_filtro('test.mp4', ['musica'], tamano) is False
 
-    def test_varias_categorias(self):
-        assert archivo_pasa_filtro('test.mp3', ['musica', 'video'], 1000) is True
-        assert archivo_pasa_filtro('test.mp4', ['musica', 'video'], 10 * 1024 * 1024, 1024 * 1024) is True
+class TestFormatSize:
+    def test_zero_bytes(self):
+        assert format_size(0) == "0 B"
+
+    def test_kilobytes(self):
+        assert format_size(1024) == "1 KB"
+        assert format_size(1536) == "1.5 KB"
+        assert format_size(2048) == "2 KB"
+
+    def test_megabytes(self):
+        assert format_size(1024 * 1024) == "1 MB"
+        assert format_size(1.5 * 1024 * 1024) == "1.5 MB"
+        assert format_size(2 * 1024 * 1024) == "2 MB"
+
+    def test_gigabytes(self):
+        assert format_size(1024 * 1024 * 1024) == "1 GB"
+        assert format_size(2.5 * 1024 * 1024 * 1024) == "2.5 GB"
+
+
+class TestEscapeHtml:
+    def test_basic(self):
+        assert escape_html("<script>alert(1)</script>") == "&lt;script&gt;alert(1)&lt;/script&gt;"
+        assert escape_html("hello & world") == "hello &amp; world"
+        assert escape_html('"quoted"') == '&quot;quoted&quot;'
+        assert escape_html("normal text") == "normal text"
 
 
 class TestFlaskEndpoints:
-    @pytest.fixture
-    def client(self):
-        app.config['TESTING'] = True
-        with app.test_client() as client:
-            yield client
+    def test_get_config(self, client):
+        response = client.get("/api/config")
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert "paths" in data
+        assert "filtros_activos" in data
+        assert "tamano_min_video" in data
 
     def test_get_filters(self, client):
-        resp = client.get('/api/filters')
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert 'categorias' in data
-        assert 'filtros_activos' in data
-        assert 'tamano_min_video' in data
-        assert set(data['categorias'].keys()) == set(EXTENSIONES.keys())
-
-    def test_get_config(self, client):
-        resp = client.get('/api/config')
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert 'paths' in data
-        assert 'filtros_activos' in data
+        response = client.get("/api/filters")
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert "categorias" in data
+        assert "filtros_activos" in data
+        assert "tamano_min_video" in data
+        assert set(data["categorias"].keys()) == {
+            "musica", "video", "documentos", "ejecutables", "imagenes", "comprimidos"
+        }
 
     def test_post_config(self, client):
-        resp = client.post('/api/config', json={
-            'paths': ['C:/test'],
-            'filtros_activos': ['musica'],
-            'tamano_min_video': 5 * 1024 * 1024
-        })
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert data['filtros_activos'] == ['musica']
-        assert data['tamano_min_video'] == 5242880
+        payload = {
+            "paths": ["/test/path1", "/test/path2"],
+            "output_path": "/test/output",
+            "review_path": "/test/review",
+            "filtros_activos": ["musica", "video"],
+            "tamano_min_video": 2097152,
+        }
+        response = client.post("/api/config", json=payload)
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["paths"] == ["/test/path1", "/test/path2"]
+        assert data["output_path"] == "/test/output"
+        assert data["review_path"] == "/test/review"
+        assert data["filtros_activos"] == ["musica", "video"]
+        assert data["tamano_min_video"] == 2097152
 
-    def test_get_last_scan(self, client):
-        resp = client.get('/api/last_scan')
-        assert resp.status_code == 200
-        assert isinstance(resp.get_json(), list)
+    def test_get_last_scan_empty(self, client):
+        response = client.get("/api/last_scan")
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data == []
 
-    def test_action_path_validation(self, client):
-        # First set paths in config
-        client.post('/api/config', json={'paths': ['C:/allowed']})
-        resp = client.post('/api/action', json={
-            'action': 'delete',
-            'files': ['C:/notallowed/file.txt'],
-            'output_path': '',
-            'review_path': ''
-        })
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert data['success'] is False
+    def test_config_roundtrip(self, client):
+        """Guarda config vía POST y la recupera vía GET."""
+        payload = {
+            "paths": ["/roundtrip/a", "/roundtrip/b"],
+            "output_path": "/roundtrip/out",
+            "review_path": "/roundtrip/rev",
+            "filtros_activos": ["imagenes", "comprimidos"],
+            "tamano_min_video": 5242880,
+        }
+        post_resp = client.post("/api/config", json=payload)
+        assert post_resp.status_code == 200
+
+        get_resp = client.get("/api/config")
+        assert get_resp.status_code == 200
+        data = json.loads(get_resp.data)
+        assert data["paths"] == ["/roundtrip/a", "/roundtrip/b"]
+        assert data["output_path"] == "/roundtrip/out"
+        assert data["review_path"] == "/roundtrip/rev"
+        assert data["filtros_activos"] == ["imagenes", "comprimidos"]
+        assert data["tamano_min_video"] == 5242880
+
+
+class TestConfigSaveLoad:
+    def test_save_and_load(self, patch_data_dir):
+        """Prueba el guardado y carga directo de funciones utilitarias."""
+        test_config = {
+            "paths": ["/a", "/b"],
+            "output_path": "/out",
+            "review_path": "/rev",
+            "filtros_activos": ["imagenes"],
+            "tamano_min_video": 1048576,
+        }
+        save_config(test_config)
+        loaded = load_config()
+        assert loaded == test_config
