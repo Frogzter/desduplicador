@@ -1,3 +1,13 @@
+/**
+ * DesDuplicador Frontend Module
+ *
+ * Handles the UI for scanning duplicate files, managing paths,
+ * applying filters, and executing bulk/single file actions.
+ *
+ * Security: All DOM rendering uses document.createElement() and
+ * textContent/setAttribute() instead of innerHTML to prevent XSS.
+ */
+
 const socket = io();
 
 let currentDuplicates = [];
@@ -240,12 +250,35 @@ function addPath(value = '', num = null) {
     
     const row = document.createElement('div');
     row.className = 'ruta-item';
-    row.innerHTML = `
-        <span class="ruta-num">${nextNum}</span>
-        <input type="text" class="path-input" placeholder="C:\\\\Ruta\\\\Carpeta" value="${escapeHtml(value)}" />
-        <button class="btn-icon btn-browse" type="button" title="Examinar...">📂</button>
-        <button class="btn-icon btn-remove" type="button">✕</button>
-    `;
+
+    const numSpan = document.createElement('span');
+    numSpan.className = 'ruta-num';
+    numSpan.textContent = nextNum;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'path-input';
+    input.placeholder = 'C:\\\\Ruta\\\\Carpeta';
+    input.value = value;
+
+    const browseBtn = document.createElement('button');
+    browseBtn.className = 'btn-icon btn-browse';
+    browseBtn.type = 'button';
+    browseBtn.title = 'Examinar...';
+    browseBtn.setAttribute('data-action', 'browse-folder');
+    browseBtn.textContent = '📂';
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'btn-icon btn-remove';
+    removeBtn.type = 'button';
+    removeBtn.setAttribute('data-action', 'remove-path');
+    removeBtn.textContent = '✕';
+
+    row.appendChild(numSpan);
+    row.appendChild(input);
+    row.appendChild(browseBtn);
+    row.appendChild(removeBtn);
+    
     container.appendChild(row);
     renumberPaths();
 }
@@ -462,55 +495,55 @@ function renderStats(duplicates) {
 
     const statsEl = dom.stats();
     if (!statsEl) return;
+    
     statsEl.innerHTML = '';
 
-    const statsData = [
+    const stats = [
         { num: totalGroups, label: 'Grupos de duplicados' },
         { num: totalFiles, label: 'Archivos duplicados' },
         { num: formatSize(totalSize), label: 'Espacio total' },
         { num: formatSize(wastedSpace), label: 'Espacio desperdiciado' }
     ];
 
-    statsData.forEach(({ num, label }) => {
+    stats.forEach(({ num, label }) => {
         const box = document.createElement('div');
         box.className = 'stat-box';
-
-        const numEl = document.createElement('div');
-        numEl.className = 'stat-num';
-        numEl.textContent = num;
-
-        const labelEl = document.createElement('div');
-        labelEl.className = 'stat-label';
-        labelEl.textContent = label;
-
-        box.appendChild(numEl);
-        box.appendChild(labelEl);
+        
+        const numDiv = document.createElement('div');
+        numDiv.className = 'stat-num';
+        numDiv.textContent = num;
+        
+        const labelDiv = document.createElement('div');
+        labelDiv.className = 'stat-label';
+        labelDiv.textContent = label;
+        
+        box.appendChild(numDiv);
+        box.appendChild(labelDiv);
         statsEl.appendChild(box);
     });
 }
 
 function renderEmptyState() {
     const container = dom.duplicatesContainer();
-    if (container) {
-        container.innerHTML = '';
-        const emptyState = document.createElement('div');
-        emptyState.className = 'empty-state';
-
-        const h3 = document.createElement('h3');
-        h3.textContent = 'No se encontraron duplicados';
-
-        const p = document.createElement('p');
-        p.textContent = 'Los archivos en las rutas seleccionadas son únicos.';
-
-        emptyState.appendChild(h3);
-        emptyState.appendChild(p);
-        container.appendChild(emptyState);
-    }
-
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    const emptyState = document.createElement('div');
+    emptyState.className = 'empty-state';
+    
+    const h3 = document.createElement('h3');
+    h3.textContent = 'No se encontraron duplicados';
+    
+    const p = document.createElement('p');
+    p.textContent = 'Los archivos en las rutas seleccionadas son únicos.';
+    
+    emptyState.appendChild(h3);
+    emptyState.appendChild(p);
+    container.appendChild(emptyState);
+    
     const statsEl = dom.stats();
-    if (statsEl) {
-        statsEl.innerHTML = '';
-    }
+    if (statsEl) statsEl.innerHTML = '';
 }
 
 function renderGroup(group, groupIndex) {
@@ -551,7 +584,9 @@ function renderGroup(group, groupIndex) {
         radio.type = 'radio';
         radio.name = `keep-${groupIndex}`;
         radio.value = file.path;
-        if (fileIndex === 0) radio.checked = true;
+        if (fileIndex === 0) {
+            radio.checked = true;
+        }
 
         const infoDiv = document.createElement('div');
         infoDiv.className = 'archivo-info';
@@ -571,18 +606,18 @@ function renderGroup(group, groupIndex) {
         actionsDiv.className = 'acciones';
 
         const actions = [
-            { action: 'delete', className: 'btn-eliminar', label: '🗑️ Eliminar' },
-            { action: 'move_review', className: 'btn-mover', label: '📂 Revisar' },
-            { action: 'rename', className: 'btn-icon', label: '🏷️ Renombrar' },
-            { action: 'consolidate', className: 'btn-mantener', label: '📦 Consolidar' }
+            { cls: 'btn-eliminar', action: 'delete', label: '🗑️ Eliminar' },
+            { cls: 'btn-mover', action: 'move_review', label: '📂 Revisar' },
+            { cls: 'btn-icon', action: 'rename', label: '🏷️ Renombrar' },
+            { cls: 'btn-mantener', action: 'consolidate', label: '📦 Consolidar' }
         ];
 
-        actions.forEach(({ action, className, label }) => {
+        actions.forEach(({ cls, action, label }) => {
             const btn = document.createElement('button');
-            btn.className = `${className} file-action-btn`;
+            btn.className = `${cls} file-action-btn`;
             btn.type = 'button';
             btn.setAttribute('data-action', action);
-            btn.setAttribute('data-file-id', file.path);
+            btn.setAttribute('data-file-path', file.path);
             btn.textContent = label;
             actionsDiv.appendChild(btn);
         });
@@ -620,7 +655,12 @@ function renderDuplicates() {
 }
 
 function escapeHtml(text) {
-    if (text == null) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function escapeAttr(text) {
     return String(text)
         .replace(/&/g, '&amp;')
         .replace(/"/g, '&quot;')
@@ -651,11 +691,12 @@ function selectAllKeep(strategy) {
         
         if (selectedPath) {
             const radios = document.querySelectorAll(`input[name="keep-${index}"]`);
-            radios.forEach(radio => {
+            for (const radio of radios) {
                 if (radio.value === selectedPath) {
                     radio.checked = true;
+                    break;
                 }
-            });
+            }
         }
     });
     
@@ -762,7 +803,6 @@ function showToast(message, type = 'info') {
 
 document.addEventListener('click', (event) => {
     const target = event.target;
-
     if (!(target instanceof Element)) return;
 
     const filterItem = target.closest('.filtro-item');
@@ -773,68 +813,66 @@ document.addEventListener('click', (event) => {
         return;
     }
 
-    const browseBtn = target.closest('.btn-browse');
-    if (browseBtn) {
-        const row = browseBtn.closest('.ruta-item');
-        if (!row) return;
+    const actionBtn = target.closest('[data-action]');
+    if (!actionBtn) return;
 
-        if (row.querySelector('#output-path')) {
+    const action = actionBtn.getAttribute('data-action');
+
+    switch (action) {
+        case 'browse-folder': {
+            const row = actionBtn.closest('.ruta-item');
+            if (!row) return;
+            if (row.querySelector('#output-path')) {
+                browseOutputPath();
+                return;
+            }
+            if (row.querySelector('#review-path')) {
+                browseReviewPath();
+                return;
+            }
+            browseFolder(actionBtn);
+            return;
+        }
+        case 'browse-output':
             browseOutputPath();
             return;
-        }
-        if (row.querySelector('#review-path')) {
+        case 'browse-review':
             browseReviewPath();
             return;
+        case 'remove-path':
+            removePath(actionBtn);
+            return;
+        case 'add-path':
+            addPathWithDialog();
+            return;
+        case 'scan-start':
+            startScan();
+            return;
+        case 'scan-stop':
+            stopScan();
+            return;
+        case 'save-paths':
+            savePaths();
+            return;
+        case 'select-all-keep': {
+            const strategy = actionBtn.getAttribute('data-strategy');
+            if (strategy) selectAllKeep(strategy);
+            return;
         }
-        browseFolder(browseBtn);
-        return;
-    }
-
-    const removeBtn = target.closest('.btn-remove');
-    if (removeBtn) {
-        removePath(removeBtn);
-        return;
-    }
-
-    if (target.closest('.btn-add')) {
-        addPathWithDialog();
-        return;
-    }
-
-    if (target.closest('.btn-escanear')) {
-        startScan();
-        return;
-    }
-
-    if (target.closest('.btn-cancelar')) {
-        stopScan();
-        return;
-    }
-
-    if (target.closest('.btn-guardar')) {
-        savePaths();
-        return;
-    }
-
-    const bulkKeepBtn = target.closest('[data-bulk-keep]');
-    if (bulkKeepBtn) {
-        selectAllKeep(bulkKeepBtn.getAttribute('data-bulk-keep'));
-        return;
-    }
-
-    const bulkActionBtn = target.closest('[data-bulk-action]');
-    if (bulkActionBtn) {
-        applyBulkAction(bulkActionBtn.getAttribute('data-bulk-action'));
-        return;
-    }
-
-    const actionBtn = target.closest('.file-action-btn');
-    if (actionBtn) {
-        const action = actionBtn.getAttribute('data-action');
-        const filepath = actionBtn.getAttribute('data-file-id');
-
-        if (action && filepath) {
-            singleAction(action, filepath);
+        case 'apply-bulk-action': {
+            const bulkAction = actionBtn.getAttribute('data-bulk-action');
+            if (bulkAction) applyBulkAction(bulkAction);
+            return;
         }
+        case 'delete':
+        case 'move_review':
+        case 'rename':
+        case 'consolidate': {
+            const filepath = actionBtn.getAttribute('data-file-path');
+            if (filepath) singleAction(action, filepath);
+            return;
+        }
+        default:
+            return;
     }
 });
