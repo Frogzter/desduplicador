@@ -28,7 +28,7 @@ except ImportError:
     WINFORMS_AVAILABLE = False
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'desduplicador-secret-key'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'desduplicador-secret-key-dev')
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 DATA_DIR = Path(__file__).parent / 'data'
