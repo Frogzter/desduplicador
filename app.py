@@ -451,38 +451,23 @@ def browse_folder() -> Response:
     title = data.get('title', 'Seleccionar carpeta')
     initial_dir = data.get('initial_dir', '')
     
+    logger.info(f"/api/browse_folder solicitado. title='{title}', initial_dir='{initial_dir}'")
     selected_path = None
     
-    # Metodo 1: PowerShell + Windows Forms (el mas completo, muestra todo)
+    # Metodo 1: PowerShell + COM (preferido)
     if platform.system() == 'Windows':
         selected_path = _browse_folder_powershell(title, initial_dir)
+        if selected_path:
+            logger.info(f"/api/browse_folder seleccionado por PowerShell COM: {selected_path}")
     
-    # Metodo 2: WinForms directo (si pythonnet esta disponible)
-    if not selected_path and WINFORMS_AVAILABLE:
-        try:
-            dialog = FolderBrowserDialog()
-            dialog.Description = title
-            dialog.ShowNewFolderButton = True
-            dialog.RootFolder = CSIDL_DRIVES
-            
-            if initial_dir and os.path.exists(initial_dir):
-                dialog.SelectedPath = initial_dir
-            
-            result = dialog.ShowDialog()
-            if result == DialogResult.OK:
-                selected_path = dialog.SelectedPath
-        except Exception as e:
-            logger.error(f"Error con WinForms dialog: {e}")
-            selected_path = None
-    
-    # Metodo 3: SHBrowseForFolderW via ctypes
-    if not selected_path and platform.system() == 'Windows':
-        selected_path = _browse_folder_ctypes(title, initial_dir)
+    # Metodo 2 y 3 deshabilitados temporalmente para evitar doble diálogo:
+    # WinForms/pythonnet y ctypes pueden abrir un segundo selector con vista limitada.
     
     if selected_path:
         return jsonify({'success': True, 'path': selected_path})
-    else:
-        return jsonify({'success': False, 'message': 'No se selecciono ninguna carpeta'})
+    
+    logger.info("/api/browse_folder sin selección de carpeta")
+    return jsonify({'success': False, 'message': 'No se seleccionó ninguna carpeta'})
 
 
 def _browse_folder_ctypes(title: str, initial_dir: str) -> Optional[str]:
@@ -553,38 +538,62 @@ def _browse_folder_ctypes(title: str, initial_dir: str) -> Optional[str]:
 
 
 def _browse_folder_powershell(title: str, initial_dir: str) -> Optional[str]:
-    """Ultimo recurso: usar Windows Forms via powershell para un dialogo completo."""
+    """Usa PowerShell + COM (Shell.Application) para abrir un selector con acceso a Network."""
     
-    ps_script = '''
-Add-Type -AssemblyName System.Windows.Forms
-$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-$dialog.Description = "''' + title.replace('"', '""') + '''"
-$dialog.ShowNewFolderButton = $true
-$dialog.RootFolder = [System.Environment+SpecialFolder]::MyComputer
-''' + (f'$dialog.SelectedPath = "{initial_dir}"\n' if initial_dir else '') + '''
-if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-    Write-Output $dialog.SelectedPath
-}
-'''
+    escaped_title = title.replace("'", "''")
     
+    ps_script = f"""
+Add-Type -AssemblyName System.Windows.Forms | Out-Null
+$shell = New-Object -ComObject Shell.Application
+
+# RootFolder en Desktop (0) para que se muestre el nodo Network en el arbol
+$selected = $shell.BrowseForFolder(0, '{escaped_title}', 0x0001 + 0x0040 + 0x0080, 0)
+
+if ($selected -ne $null) {{
+    $path = $selected.Self.Path
+    if (-not [string]::IsNullOrWhiteSpace($path)) {{
+        Write-Output $path
+    }} elseif ($selected.Self.Name -in @('Network', 'Red')) {{
+        Write-Output '::NETWORK::'
+    }}
+}}
+"""
+    
+    ps_file: Optional[str] = None
     try:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.ps1', delete=False, encoding='utf-8') as f:
             f.write(ps_script)
             ps_file = f.name
         
+        ps_exe = shutil.which('powershell.exe') or shutil.which('pwsh.exe')
+        if not ps_exe:
+            logger.error("No se encontro powershell.exe ni pwsh.exe para abrir el dialogo de carpeta")
+            return None
+
         result = subprocess.run(
-            ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps_file],
+            [ps_exe, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps_file],
             capture_output=True, text=True, timeout=120
         )
+
+        if result.returncode != 0:
+            logger.error(f"PowerShell devolvio codigo {result.returncode}: {result.stderr.strip()}")
+            return None
         
-        os.unlink(ps_file)
-        
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
+        if result.stdout.strip():
+            output = result.stdout.strip()
+            if output == '::NETWORK::':
+                return None
+            return output
         return None
     except Exception as e:
-        logger.error(f"Error con PowerShell dialog: {e}")
+        logger.error(f"Error con PowerShell dialog COM: {e}")
         return None
+    finally:
+        if ps_file and os.path.exists(ps_file):
+            try:
+                os.unlink(ps_file)
+            except OSError:
+                logger.warning(f"No se pudo eliminar archivo temporal: {ps_file}")
 
 
 if __name__ == '__main__':

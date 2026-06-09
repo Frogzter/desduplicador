@@ -284,6 +284,9 @@ function addPath(value = '', num = null) {
 }
 
 function addPathWithDialog() {
+    const addBtn = document.querySelector('[data-action="add-path"]');
+    if (addBtn) addBtn.setAttribute('disabled', 'disabled');
+
     pickFolder({
         title: 'Seleccionar carpeta para comparar',
         initialDir: ''
@@ -292,10 +295,19 @@ function addPathWithDialog() {
             if (data.success && data.path) {
                 addPath(data.path);
                 showToast('Carpeta agregada: ' + data.path, 'success');
+                return;
             }
+
+            const msg = data && data.message
+                ? data.message
+                : 'No se seleccionó ninguna carpeta';
+            showToast(msg, 'info');
         })
         .catch(err => {
             showToast('Error abriendo diálogo: ' + normalizeError(err), 'error');
+        })
+        .finally(() => {
+            if (addBtn) addBtn.removeAttribute('disabled');
         });
 }
 
