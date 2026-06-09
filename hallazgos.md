@@ -32,22 +32,18 @@ Ver revisiones previas para detalle completo.
 
 ## Nuevos Hallazgos 🆕
 
-### NUEVO-MED-1: SECRET_KEY hardcodeado (app.py:31)
+### NUEVO-MED-1: SECRET_KEY hardcodeado (app.py:31) — RESUELTO ✅
 
-**Problema:**
+**Problema:** `SECRET_KEY` hardcodeado.
+
+**Fix aplicado:**
 ```python
-app.config['SECRET_KEY'] = 'desduplicador-secret-key'
-```
-
-El secret key de Flask está hardcodeado en el código fuente. Si la app se expone a la red (aunque sea accidentalmente), el secret es público y predecible.
-
-**Impacto:** Medio. Flask usa SECRET_KEY para firmar cookies de sesión. Con un secret conocido, un atacante podría falsificar cookies.
-
-**Fix recomendado:**
-```python
-import os
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'desduplicador-secret-key-dev')
 ```
+
+- Si existe la variable de entorno `SECRET_KEY`, la usa.
+- Si no, usa un fallback explícito de desarrollo.
+- `import os` ya estaba presente en el módulo.
 
 ---
 
@@ -156,10 +152,7 @@ Las líneas 825-832 nunca se ejecutan porque los botones de output-path y review
 
 ## Recomendaciones
 
-### Prioridad Inmediata
-1. **NUEVO-MED-1**: Mover `SECRET_KEY` a variable de entorno.
-
-### Prioridad Baja
+### Prioridad Baja (no bloqueantes)
 2. **NUEVO-LOW-1**: Mover inline styles del HTML a clases CSS.
 3. **NUEVO-LOW-2**: Eliminar código muerto en event delegation (`browse-folder` case).
 4. **NUEVO-LOW-3**: Mover `_collect_files` a nivel de módulo.
