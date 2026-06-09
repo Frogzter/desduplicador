@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DesDuplicador - Comparador de Carpetas</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🗂️ DesDuplicador</h1>
+            <p>Comparador de carpetas y gestor de archivos duplicados</p>
+        </header>
+
+        <section class="config">
+            <h2>📁 Rutas a Comparar</h2>
+            <div class="rutas-editor">
+                <div id="paths-container">
+                    <div class="ruta-item">
+                        <span class="ruta-num">1</span>
+                        <input type="text" class="path-input" placeholder="C:\\Ruta\\Carpeta1" />
+                        <button class="btn-icon btn-browse" onclick="browseFolder(this)" title="Examinar...">📂</button>
+                        <button class="btn-icon btn-remove" onclick="removePath(this)">✕</button>
+                    </div>
+                    <div class="ruta-item">
+                        <span class="ruta-num">2</span>
+                        <input type="text" class="path-input" placeholder="C:\\Ruta\\Carpeta2" />
+                        <button class="btn-icon btn-browse" onclick="browseFolder(this)" title="Examinar...">📂</button>
+                        <button class="btn-icon btn-remove" onclick="removePath(this)">✕</button>
+                    </div>
+                </div>
+                <button class="btn-add" onclick="addPath()">+ Agregar otra ruta</button>
+            </div>
+
+            <div class="destino-config">
+                <h4>📦 Carpeta de consolidación (archivos depurados):</h4>
+                <div class="ruta-item">
+                    <input type="text" id="output-path" placeholder="C:\\Ruta\\Consolidados" />
+                    <button class="btn-icon btn-browse" onclick="browseOutputPath()" title="Examinar...">📂</button>
+                </div>
+                
+                <h4>🔍 Carpeta de "revisar después":</h4>
+                <div class="ruta-item">
+                    <input type="text" id="review-path" placeholder="C:\\Ruta\\RevisarDespues" />
+                    <button class="btn-icon btn-browse" onclick="browseReviewPath()" title="Examinar...">📂</button>
+                </div>
+            </div>
+
+            <div class="actions-row">
+                <button class="btn-escanear" id="btn-scan" onclick="startScan()">🔎 Iniciar Escaneo</button>
+                <button class="btn-cancelar" id="btn-stop" onclick="stopScan()" disabled>⏹ Detener</button>
+                <button class="btn-guardar" onclick="savePaths()">💾 Guardar Rutas</button>
+            </div>
+        </section>
+
+        <section class="progreso-container" id="progress-section">
+            <div class="progreso-info">
+                <span class="progreso-mensaje" id="progress-message">Preparando...</span>
+                <span class="progreso-pct" id="progress-percent">0%</span>
+            </div>
+            <div class="progreso-barra-bg">
+                <div class="progreso-barra-fill" id="progress-fill" style="width: 0%">0%</div>
+            </div>
+        </section>
+
+        <section id="results-section" style="display:none;">
+            <h2>📊 Resultados del Escaneo</h2>
+            <div class="stats" id="stats"></div>
+            
+            <div class="bulk-actions">
+                <h3>⚡ Acciones en Grupo</h3>
+                <div class="bulk-buttons">
+                    <button class="btn-bulk btn-mantener" onclick="selectAllKeep('first')">✅ Conservar primero de cada grupo</button>
+                    <button class="btn-bulk btn-mantener" onclick="selectAllKeep('largest')">✅ Conservar el más grande</button>
+                    <button class="btn-bulk btn-mantener" onclick="selectAllKeep('newest')">✅ Conservar el más reciente</button>
+                    <button class="btn-bulk btn-eliminar" onclick="applyBulkAction('delete')">🗑️ Eliminar seleccionados</button>
+                    <button class="btn-bulk btn-mover" onclick="applyBulkAction('move_review')">📂 Mover a revisar</button>
+                    <button class="btn-bulk" onclick="applyBulkAction('rename')">🏷️ Renombrar duplicados</button>
+                    <button class="btn-bulk btn-mantener" onclick="applyBulkAction('consolidate')">📦 Consolidar</button>
+                </div>
+            </div>
+
+            <div id="duplicates-container"></div>
+        </section>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
