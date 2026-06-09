@@ -78,6 +78,27 @@ function addPath(value = '', num = null) {
     renumberPaths();
 }
 
+function addPathWithDialog() {
+    fetch('/api/browse_folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            title: 'Seleccionar carpeta para comparar',
+            initial_dir: ''
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success && data.path) {
+            addPath(data.path);
+            showToast('Carpeta agregada: ' + data.path, 'success');
+        }
+    })
+    .catch(err => {
+        showToast('Error abriendo diálogo: ' + err, 'error');
+    });
+}
+
 function browseFolder(btn) {
     const row = btn.closest('.ruta-item');
     const input = row.querySelector('.path-input');

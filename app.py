@@ -291,18 +291,24 @@ def handle_action():
 
 @app.route('/api/browse_folder', methods=['POST'])
 def browse_folder():
-    """Abre el diálogo nativo de Windows para seleccionar carpetas locales o de red."""
+    """Abre el dialogo nativo de Windows para seleccionar carpetas locales o de red."""
     data = request.get_json() or {}
     title = data.get('title', 'Seleccionar carpeta')
     initial_dir = data.get('initial_dir', '')
     
     selected_path = None
     
-    if WINFORMS_AVAILABLE:
+    # Metodo 1: PowerShell + Windows Forms (el mas completo, muestra todo)
+    if platform.system() == 'Windows':
+        selected_path = _browse_folder_powershell(title, initial_dir)
+    
+    # Metodo 2: WinForms directo (si pythonnet esta disponible)
+    if not selected_path and WINFORMS_AVAILABLE:
         try:
             dialog = FolderBrowserDialog()
             dialog.Description = title
             dialog.ShowNewFolderButton = True
+            dialog.RootFolder = 17  # MyComputer = CSIDL_DRIVES
             
             if initial_dir and os.path.exists(initial_dir):
                 dialog.SelectedPath = initial_dir
@@ -314,28 +320,42 @@ def browse_folder():
             print(f"Error con WinForms dialog: {e}")
             selected_path = None
     
-    # Fallback: usar SHBrowseForFolderW via ctypes
+    # Metodo 3: SHBrowseForFolderW via ctypes
     if not selected_path and platform.system() == 'Windows':
         selected_path = _browse_folder_ctypes(title, initial_dir)
     
     if selected_path:
         return jsonify({'success': True, 'path': selected_path})
     else:
-        return jsonify({'success': False, 'message': 'No se seleccionó ninguna carpeta'})
+        return jsonify({'success': False, 'message': 'No se selecciono ninguna carpeta'})
 
 
 def _browse_folder_ctypes(title, initial_dir):
-    """Fallback usando SHBrowseForFolderW via ctypes (soporta rutas de red)."""
+    """Abre el dialogo nativo de Windows usando IFileDialog (Vista+) o SHBrowseForFolderW.
+    Muestra unidades locales, mapeadas y de red."""
     try:
         from ctypes import wintypes
         
+        shell32 = ctypes.windll.shell32
+        ole32 = ctypes.windll.ole32
+        
+        # CoInitialize para COM
+        ole32.CoInitialize(None)
+        
+        # --- Intentar IFileDialog primero (Vista+, mucho mejor) ---
+        try:
+            result = _browse_ifiledialog(title, initial_dir)
+            if result:
+                return result
+        except Exception as e:
+            print(f"IFileDialog no disponible, usando fallback: {e}")
+        
+        # --- Fallback: SHBrowseForFolderW ---
         BIF_RETURNONLYFSDIRS = 0x00000001
-        BIF_DONTGOBELOWDOMAIN = 0x00000002
         BIF_NEWDIALOGSTYLE = 0x00000040
         BIF_SHAREABLE = 0x00008000
         BIF_NONEWFOLDERBUTTON = 0x00000200
-        BIF_BROWSEINCLUDEURLS = 0x00000080
-        BIF_USENEWUI = BIF_NEWDIALOGSTYLE | BIF_SHAREABLE
+        CSIDL_DRIVES = 0x0011
         
         class BROWSEINFO(ctypes.Structure):
             _fields_ = [
@@ -349,35 +369,33 @@ def _browse_folder_ctypes(title, initial_dir):
                 ("iImage", wintypes.INT),
             ]
         
-        shell32 = ctypes.windll.shell32
-        ole32 = ctypes.windll.ole32
-        
-        # CoInitialize para COM
-        ole32.CoInitialize(None)
+        # Obtener PIDL de "Este equipo" para mostrar TODAS las unidades
+        pidl_root = ctypes.c_void_p()
+        shell32.SHGetSpecialFolderLocation(0, CSIDL_DRIVES, ctypes.byref(pidl_root))
         
         display_name = ctypes.create_unicode_buffer(260)
         
         bi = BROWSEINFO()
         bi.hwndOwner = 0
-        bi.pidlRoot = None
+        bi.pidlRoot = pidl_root
         bi.pszDisplayName = ctypes.cast(display_name, wintypes.LPWSTR)
         bi.lpszTitle = title
-        bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_USENEWUI
+        bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE | BIF_SHAREABLE
         bi.lpfn = None
         bi.lParam = 0
         bi.iImage = 0
         
-        pidl = shell32.SHBrowseForFolderW(ctypes.byref(bi))
+        pidl_selected = shell32.SHBrowseForFolderW(ctypes.byref(bi))
         
-        if pidl:
+        # Liberar PIDL root
+        if pidl_root:
+            ole32.CoTaskMemFree(pidl_root)
+        
+        if pidl_selected:
             path_buffer = ctypes.create_unicode_buffer(260)
-            # Pass the buffer directly - ctypes handles the conversion
-            ret = shell32.SHGetPathFromIDListW(pidl, path_buffer)
-            
-            # Liberar PIDL
-            ole32.CoTaskMemFree(pidl)
-            
+            shell32.SHGetPathFromIDListW(pidl_selected, path_buffer)
             result = path_buffer.value
+            ole32.CoTaskMemFree(pidl_selected)
             ole32.CoUninitialize()
             return result if result else None
         
@@ -385,7 +403,63 @@ def _browse_folder_ctypes(title, initial_dir):
         return None
         
     except Exception as e:
-        print(f"Error con ctypes dialog: {e}")
+        print(f"Error con dialogo nativo: {e}")
+        return None
+
+
+def _browse_ifiledialog(title, initial_dir):
+    """Usa IFileDialog (Windows Vista+) para un dialogo moderno tipo Explorer.
+    Soporta unidades mapeadas, red, y tiene barra de direcciones."""
+    import comtypes
+    from comtypes.client import CreateObject
+    
+    # CLSID_FileOpenDialog = {DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7}
+    # Pero usamos FolderPickerDialog (Windows 8+) o FileOpenDialog con FOS_PICKFOLDERS
+    
+    try:
+        # Intentar Windows 8+ FolderPicker
+        picker = CreateObject("{DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7}", interface=comtypes.gen._00020430_0000_0000_C000_000000000046_0_2_0.IUnknown)
+        # No podemos usar FolderPicker facilmente sin las interfaces tipadas
+        # Vamos con el metodo mas robusto: subprocess con powershell
+        raise Exception("COM tipado no disponible, usar powershell")
+    except Exception:
+        raise
+
+
+def _browse_folder_powershell(title, initial_dir):
+    """Ultimo recurso: usar Windows Forms via powershell para un dialogo completo."""
+    import subprocess
+    import tempfile
+    
+    ps_script = '''
+Add-Type -AssemblyName System.Windows.Forms
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$dialog.Description = "''' + title.replace('"', '""') + '''"
+$dialog.ShowNewFolderButton = $true
+$dialog.RootFolder = [System.Environment+SpecialFolder]::MyComputer
+''' + (f'$dialog.SelectedPath = "{initial_dir}"\n' if initial_dir else '') + '''
+if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+    Write-Output $dialog.SelectedPath
+}
+'''
+    
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.ps1', delete=False, encoding='utf-8') as f:
+            f.write(ps_script)
+            ps_file = f.name
+        
+        result = subprocess.run(
+            ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps_file],
+            capture_output=True, text=True, timeout=120
+        )
+        
+        os.unlink(ps_file)
+        
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+        return None
+    except Exception as e:
+        print(f"Error con PowerShell dialog: {e}")
         return None
 
 
