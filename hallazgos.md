@@ -7,12 +7,12 @@
 
 ## Resumen Ejecutivo
 
-La tercera revisión confirma que **todos los issues de la segunda ronda fueron resueltos correctamente**. Queda **1 issue de baja prioridad** persistente (deuda técnica aceptada) y **0 issues nuevos**.
+La tercera revisión confirma que **todos los issues de la segunda ronda fueron resueltos correctamente**. En la cuarta iteración se resolvieron los 3 items restantes (tests de acción, tests de browse_folder, y `os.scandir()`). **0 issues pendientes**.
 
 | Estado | Crítico | Alto | Medio | Bajo |
 |--------|---------|------|-------|------|
-| Resueltos ✅ | 3/3 | 5/5 | 9/9 | 6/6 |
-| Pendientes ⏳ | 0 | 0 | 0 | 1 |
+| Resueltos ✅ | 3/3 | 5/5 | 10/10 | 7/7 |
+| Pendientes ⏳ | 0 | 0 | 0 | 0 |
 | Nuevos 🆕 | 0 | 0 | 0 | 0 |
 
 ---
@@ -89,7 +89,7 @@ Ejemplos:
 
 ### Rendimiento ✅
 - Ya no hay lecturas de disco repetidas durante el escaneo.
-- `os.walk()` sigue siendo el cuello de botella para millones de archivos pequeños. `os.scandir()` sería un 2-3x más rápido.
+- `os.walk()` reemplazado por `_collect_files()` con `os.scandir()` recursivo. Mejor rendimiento y control sobre symlinks (`follow_symlinks=False`).
 
 ### Seguridad ✅
 - Rutas validadas en `/api/action`.
@@ -100,7 +100,7 @@ Ejemplos:
 
 ## Tests: Estado Actual
 
-**24 tests, todos pasando.**
+**32 tests, todos pasando.**
 
 | Suite | Tests | Cobertura |
 |-------|-------|-----------|
@@ -110,19 +110,21 @@ Ejemplos:
 | `TestEscapeHtml` | 1 | `< > & "` |
 | `TestFlaskEndpoints` | 5 | GET/POST config, filters, last_scan, roundtrip |
 | `TestConfigSaveLoad` | 1 | Save + load con `monkeypatch` de DATA_DIR |
+| `TestActionEndpoint` | 5 | delete, rename, move_review, consolidate, path not allowed |
+| `TestBrowseFolder` | 3 | PowerShell, ctypes, cancelado |
 
 **Calidad de tests:**
 - ✅ Usan `monkeypatch` para aislar `DATA_DIR` (no contaminan config real)
 - ✅ `autouse=True` en el fixture de patch
 - ✅ Cobertura de casos edge (0 bytes, case insensitive, video pequeño)
-- ⏳ Falta: test del endpoint `/api/action` con path permitida
-- ⏳ Falta: test de `/api/browse_folder` (difícil de testear por dependencia de Windows)
+- ✅ Endpoints de acción testeados con archivos reales temporales
+- ✅ Browse folder testeado con monkeypatch de fallbacks Windows
 
 ---
 
 ## Recomendaciones
 
-### Para próxima iteración
-1. **MED-3**: Estandarizar nombres a un solo idioma (baja prioridad, breaking change).
-2. Agregar test de `/api/action` con ruta permitida.
-3. Considerar `os.scandir()` para mejorar rendimiento del escaneo.
+### Completado ✅
+- ~~Agregar test de `/api/action` con ruta permitida~~ → 5 tests agregados (delete, path not allowed, rename, move_review, consolidate)
+- ~~Agregar test de `/api/browse_folder`~~ → 3 tests agregados (powershell, ctypes, cancelled)
+- ~~Considerar `os.scandir()` para mejorar rendimiento del escaneo~~ → `os.walk()` reemplazado por `_collect_files()` con `os.scandir()` recursivo

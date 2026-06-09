@@ -1,5 +1,7 @@
 import json
+import os
 import pytest
+from pathlib import Path
 from app import (
     app,
     detectar_categoria,
@@ -202,3 +204,166 @@ class TestConfigSaveLoad:
         save_config(test_config)
         loaded = load_config()
         assert loaded == test_config
+
+
+class TestActionEndpoint:
+    def test_action_delete_allowed(self, client, tmp_path, patch_data_dir):
+        """Elimina un archivo dentro de una ruta permitida."""
+        allowed = tmp_path / "allowed"
+        allowed.mkdir()
+        test_file = allowed / "file.txt"
+        test_file.write_text("hello")
+
+        save_config({"paths": [str(allowed)], "output_path": "", "review_path": ""})
+
+        response = client.post("/api/action", json={
+            "action": "delete",
+            "files": [str(test_file)],
+            "keep": "",
+        })
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["success"] is True
+        assert len(data["results"]) == 1
+        assert data["results"][0]["success"] is True
+        assert not test_file.exists()
+
+    def test_action_path_not_allowed(self, client, tmp_path, patch_data_dir):
+        """Rechaza archivos fuera de las rutas configuradas."""
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        test_file = outside / "file.txt"
+        test_file.write_text("hello")
+
+        allowed = tmp_path / "allowed"
+        allowed.mkdir()
+        save_config({"paths": [str(allowed)], "output_path": "", "review_path": ""})
+
+        response = client.post("/api/action", json={
+            "action": "delete",
+            "files": [str(test_file)],
+            "keep": "",
+        })
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["success"] is False
+        assert "Ruta no permitida" in data["message"]
+
+    def test_action_rename_allowed(self, client, tmp_path, patch_data_dir):
+        """Renombra un archivo dentro de una ruta permitida."""
+        allowed = tmp_path / "allowed"
+        allowed.mkdir()
+        test_file = allowed / "file.txt"
+        test_file.write_text("hello")
+
+        save_config({"paths": [str(allowed)], "output_path": "", "review_path": ""})
+
+        response = client.post("/api/action", json={
+            "action": "rename",
+            "files": [str(test_file)],
+            "keep": "",
+        })
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["success"] is True
+        assert data["results"][0]["success"] is True
+        assert "Renombrado" in data["results"][0]["message"]
+        assert not test_file.exists()
+        assert list(allowed.glob("file_duplicado_*.txt"))
+
+    def test_action_move_review_allowed(self, client, tmp_path, patch_data_dir):
+        """Mueve un archivo a la carpeta de revisión."""
+        allowed = tmp_path / "allowed"
+        allowed.mkdir()
+        test_file = allowed / "file.txt"
+        test_file.write_text("hello")
+        review = tmp_path / "review"
+
+        save_config({"paths": [str(allowed)], "output_path": "", "review_path": str(review)})
+
+        response = client.post("/api/action", json={
+            "action": "move_review",
+            "files": [str(test_file)],
+            "keep": "",
+            "review_path": str(review),
+        })
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["success"] is True
+        assert data["results"][0]["success"] is True
+        assert not test_file.exists()
+        assert (review / "file.txt").exists()
+
+    def test_action_consolidate_allowed(self, client, tmp_path, patch_data_dir):
+        """Consolida un archivo copiándolo a output_path y eliminando el original."""
+        allowed = tmp_path / "allowed"
+        allowed.mkdir()
+        test_file = allowed / "file.txt"
+        test_file.write_text("hello consolidate")
+        output = tmp_path / "output"
+
+        save_config({"paths": [str(allowed)], "output_path": str(output), "review_path": ""})
+
+        response = client.post("/api/action", json={
+            "action": "consolidate",
+            "files": [str(test_file)],
+            "keep": "",
+            "output_path": str(output),
+        })
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["success"] is True
+        assert data["results"][0]["success"] is True
+        assert not test_file.exists()
+        assert (output / "file.txt").exists()
+        assert (output / "file.txt").read_text() == "hello consolidate"
+
+
+class TestBrowseFolder:
+    def test_browse_folder_powershell(self, client, monkeypatch):
+        """Simula selección de carpeta vía PowerShell fallback."""
+        fake_path = r"C:\Users\Test\Documents"
+
+        def fake_powershell(title, initial_dir):
+            return fake_path
+
+        monkeypatch.setattr("app._browse_folder_powershell", fake_powershell)
+        monkeypatch.setattr("app.WINFORMS_AVAILABLE", False)
+        monkeypatch.setattr("app.platform.system", lambda: "Windows")
+
+        response = client.post("/api/browse_folder", json={"title": "Test"})
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["success"] is True
+        assert data["path"] == fake_path
+
+    def test_browse_folder_ctypes(self, client, monkeypatch):
+        """Simula selección de carpeta vía ctypes fallback."""
+        fake_path = r"Z:\NAS\Backup"
+
+        def fake_ctypes(title, initial_dir):
+            return fake_path
+
+        monkeypatch.setattr("app._browse_folder_ctypes", fake_ctypes)
+        monkeypatch.setattr("app._browse_folder_powershell", lambda t, i: None)
+        monkeypatch.setattr("app.WINFORMS_AVAILABLE", False)
+        monkeypatch.setattr("app.platform.system", lambda: "Windows")
+
+        response = client.post("/api/browse_folder", json={"title": "Test"})
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["success"] is True
+        assert data["path"] == fake_path
+
+    def test_browse_folder_cancelled(self, client, monkeypatch):
+        """Simula que el usuario cancela el diálogo."""
+        monkeypatch.setattr("app._browse_folder_powershell", lambda t, i: None)
+        monkeypatch.setattr("app._browse_folder_ctypes", lambda t, i: None)
+        monkeypatch.setattr("app.WINFORMS_AVAILABLE", False)
+        monkeypatch.setattr("app.platform.system", lambda: "Windows")
+
+        response = client.post("/api/browse_folder", json={"title": "Test"})
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["success"] is False
+        assert "No se selecciono" in data["message"]

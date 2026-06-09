@@ -231,8 +231,29 @@ def scan_worker(paths: List[str]) -> None:
         config = load_config()
         filtros_activos = config.get('filtros_activos', list(EXTENSIONES.keys()) + ['otros'])
         
+        def _collect_files(path: str) -> List[Path]:
+            """Recopila archivos recursivamente usando os.scandir() para mejor rendimiento."""
+            collected: List[Path] = []
+            stack = [path]
+            while stack:
+                if scan_stop_event.is_set():
+                    return collected
+                current = stack.pop()
+                try:
+                    with os.scandir(current) as it:
+                        for entry in it:
+                            if scan_stop_event.is_set():
+                                return collected
+                            if entry.is_file(follow_symlinks=False):
+                                collected.append(Path(entry.path))
+                            elif entry.is_dir(follow_symlinks=False):
+                                stack.append(entry.path)
+                except (OSError, PermissionError):
+                    pass
+            return collected
+
         # Primero: recopilar todos los archivos
-        all_files = []
+        all_files: List[Path] = []
         for path in paths:
             p = Path(path)
             if not p.exists():
@@ -241,12 +262,7 @@ def scan_worker(paths: List[str]) -> None:
             if p.is_file():
                 all_files.append(p)
             else:
-                for root, _, files in os.walk(path):
-                    if scan_stop_event.is_set():
-                        socketio.emit('scan_stopped', {})
-                        return
-                    for filename in files:
-                        all_files.append(Path(root) / filename)
+                all_files.extend(_collect_files(str(p)))
         
         # Aplicar filtros por categoria
         save_progress({'status': 'scanning', 'current': 0, 'total': len(all_files), 'message': 'Filtrando archivos...'})
